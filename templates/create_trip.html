@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}
+  TripCrew
+{% endblock %}
+
+{% block content %}
+
+
+<h1>Crea un nuovo viaggio</h1>
+<form method="post">
+    <label>Nome viaggio</label><br>
+    <input type="text" name="nome_viaggio" required><br><br>
+
+    <label>Destinazione</label><br>
+    <input type="text" name="destinazione" required><br><br>
+
+    <label>Data inizio</label><br>
+    <input type="date" name="data_inizio" required><br><br>
+
+    <label>Data fine</label><br>
+    <input type="date" name="data_fine" required><br><br>
+
+    <label>Budget per persona</label><br>
+    <input type="number"  step="5" name="budget" required><br><br>
+
+    <label for="tipo di viaggio">Tipologia di viaggio:</label>
+    <select name="tipo_viaggio" id="tipo_viaggio" required>
+      <option value="">Selezione una tipologia</option>
+      <option value="campeggio">Campeggio</option>
+      <option value="trekking">Trekking di più giorni</option>
+      <option value="escursione">Escursione in giornata</option>
+      <option value="hotel">Hotel</option>
+      <option value="altro">Altro</option>
+    </select> 
+
+    <button type="submit">Crea Viaggio</button>
+</form>
+
+
+{% endblock %}

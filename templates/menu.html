@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}
+  Menu - TripCrew
+{% endblock %}
+
+{% block content %}
+
+<h1>Benvenuto {{ username }} </h1>
+
+<a href="/create_trip" class="btn btn-primary">+ Nuovo Viaggio</a>
+
+<h2>I tuoi viaggi:</h2>
+
+{% if viaggi %}
+{% for viaggio in viaggi %}
+    <a 
+    href="{{url_for('viaggio', id_viaggio=viaggio['id'])}}" class="btn btn-info"><strong>{{viaggio["nome"]}}</strong>
+        - {{viaggio["destinazione"]}} <br>
+    Dal {{viaggio["data_inizio"]}} al {{viaggio["data_fine"]}}
+    
+    </a>
+{% endfor %}
+
+{% else %}
+<p>Non fai ancora parte di un viaggio.</p>
+{% endif %}
+
+
+{% endblock %}
+
