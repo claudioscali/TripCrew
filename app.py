@@ -8,6 +8,7 @@ from flask import (
 )
 import mysql.connector
 from mysql.connector import Error
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
@@ -51,12 +52,12 @@ def login():
         try:
             cursor=connessione.cursor()
             query="""
-            SELECT id, username FROM utenti 
-            WHERE email = %s AND password = %s
+            SELECT id, username, password FROM utenti 
+            WHERE email = %s 
             """
-            cursor.execute(query,(email, password))
+            cursor.execute(query,(email,))
             utente=cursor.fetchone()
-            if utente:
+            if utente and check_password_hash(utente[2], password):
                 id_utente=utente[0]
                 username=utente[1]
                 session["id_utente"]=id_utente
@@ -64,7 +65,7 @@ def login():
                 flash("Accesso effettuato correttamente.", "success")
                 return redirect(url_for("menu"))
             else:
-                flash("Username o password non corretti.", "error")
+                flash("Email o password non corretti.", "error")
         except Error as errore_db:
             print(f"Errore MySQL: {errore_db}")
             flash("Si è verificato un errore durante il login.", "errore")
@@ -80,9 +81,13 @@ def registrazione():
         username=request.form.get("username", "").strip()
         email=request.form.get("email", "").strip()
         password=request.form.get("password", "").strip()
+        
         if not username or not password or not email:
             flash("Riempi tutti i campi.", "error")
             return render_template("registrazione.html")
+        
+        hashed_password = generate_password_hash(password)
+        
         connessione=tentativo_accesso()
         if connessione is None:
             flash("Errore di connessione al database")
@@ -94,7 +99,7 @@ def registrazione():
             INSERT INTO utenti (username, email, password)
             VALUES (%s, %s, %s)
             """
-            cursor.execute(query, (username, email, password))
+            cursor.execute(query, (username, email, hashed_password))
             connessione.commit()
             flash("Utente salvato correttamente.", "success")
             return redirect(url_for("home"))
@@ -291,10 +296,16 @@ def checklist_attrezzatura(id_viaggio):
         cursor = connessione.cursor(dictionary=True)
         #verifica che l'utente possa accedere al viaggio
         cursor.execute("""
-        SELECT v.id, v.nome
-        FROM viaggi v
-        LEFT JOIN partecipanti p ON v.id = p.viaggio_id
-        WHERE v.id = %s AND (v.creatore_id = %s OR p.utente_id = %s)
+        SELECT v.id, v.nome FROM viaggi v
+        WHERE v.id = %s
+            AND (
+            v.creatore_id = %s 
+            OR EXISTS (
+                SELECT 1 FROM partecipanti p
+                WHERE p.viaggio_id = v.id
+                    AND p.utente_id = %s    
+            )
+        )
         """, (id_viaggio, id_utente, id_utente))
         
         viaggio = cursor.fetchone()
@@ -341,7 +352,7 @@ def checklist_attrezzatura(id_viaggio):
                     )
                     connessione.commit()
                     flash("Oggetto aggiunto alla checklist.", "success")
-            #Elimina un oggetto dalla checlist
+            #Elimina un oggetto dalla checklist
             elif azione== "elimina":
                 item_id=request.form.get("item_id")
 
@@ -386,6 +397,9 @@ def checklist_attrezzatura(id_viaggio):
     except mysql.connector.Error as errore_db:
         connessione.rollback()
         print(f"Errore MySQL: {errore_db}")
+        print(f"Codice errore: {errore_db.errno}")
+        print(f"SQLSTATE: {errore_db.sqlstate}")
+
         flash("Si è verificato un errore nella checklist.", "error")
         return redirect(url_for("menu"))
     finally:
@@ -395,6 +409,133 @@ def checklist_attrezzatura(id_viaggio):
 
 
 
+@app.route("/viaggio/<int:id_viaggio>/lista_partecipanti", methods=["GET","POST"])
+def lista_partecipanti(id_viaggio):
+    if "id_utente" not in session:
+        return redirect (url_for("login"))
+    id_utente = session["id_utente"]
+    username = session["username"]
+
+    connessione=tentativo_accesso()
+    if connessione is None:
+        flash("Errore di connessione al database.", "error")
+        return redirect(url_for("menu"))
+    cursor = None
+    try:
+        cursor = connessione.cursor(dictionary=True)
+        #verifica che l'utente possa accedere al viaggio
+        cursor.execute("""
+        SELECT v.id, v.nome
+        FROM viaggi v
+        WHERE v.id = %s
+            AND (
+                v.creatore_id = %s
+                OR EXISTS (
+                    SELECT 1
+                    FROM partecipanti p
+                    WHERE p.viaggio_id = v.id
+                        AND p.utente_id = %s
+                )
+            )
+        """, (id_viaggio, id_utente, id_utente))
+        
+        viaggio = cursor.fetchone()
+
+        if viaggio is None:
+            flash("Viaggio non trovato o non accessibile.", "error")
+            return redirect(url_for("menu"))
+        
+        if request.method == "POST":
+            azione = request.form.get("azione")
+            if azione=="aggiungi":
+                username_nuovo = request.form.get("username", "").strip()
+
+                if not username_nuovo:
+                    flash("Inserisci l'username del nuovo partecipante.", "error")
+                else:
+                    cursor.execute(
+                    """
+                    SELECT id FROM utenti
+                    WHERE username = %s
+                    """,
+                    (username_nuovo,)
+                    )
+                    utente=cursor.fetchone()
+                    if utente is None:
+                        flash("Nessun utente trovato con questo username", "error")
+                        return redirect(url_for("lista_partecipanti", id_viaggio=id_viaggio))
+                    else:
+                        utente_id=utente["id"]
+                    cursor.execute(
+                        """
+                        SELECT 1 FROM partecipanti
+                        WHERE utente_id=%s AND viaggio_id=%s
+                        """,
+                        (utente_id, id_viaggio)
+                    )
+                    partecipante_esistente=cursor.fetchone()
+                    if partecipante_esistente:
+                        flash("Questo utente partecipa già al viaggio.", "error")
+                    else:
+                        cursor.execute(
+                            """
+                            INSERT INTO partecipanti (utente_id, viaggio_id)
+                            VALUES (%s, %s)
+                            """,
+                            (utente_id, id_viaggio)
+                        )
+                        connessione.commit()
+                        flash("Partecipante aggiunto al viaggio.", "success")
+            #Elimina un partecipante dalla 
+            elif azione== "elimina":
+                utente_da_eliminare=request.form.get("utente_id", "")
+                
+                if utente_da_eliminare.isdigit():
+                    cursor.execute(
+                        """
+                        DELETE FROM partecipanti
+                        WHERE utente_id = %s AND viaggio_id=%s
+                        """,
+                        (int(utente_da_eliminare), id_viaggio)
+                    )
+                    connessione.commit()
+
+                    flash("Partecipante eliminato dalla lista.", "success")
+                else:
+                    flash("Utente non valido.", "error")
+            return redirect(url_for("lista_partecipanti", id_viaggio=id_viaggio))
+        
+        #recupera i partecipanti di questo viaggio
+        cursor.execute(
+            """
+            SELECT u.id AS utente_id, u.username
+            FROM partecipanti p JOIN utenti u ON u.id=p.utente_id 
+            WHERE viaggio_id = %s
+            ORDER BY username
+            """,
+            (id_viaggio,)
+        )
+
+        partecipanti = cursor.fetchall()
+
+        totale = len(partecipanti)
+
+        return render_template(
+            "lista_partecipanti.html",
+            username=username,
+            viaggio=viaggio,
+            partecipanti=partecipanti,
+            totale=totale
+        )
+    except mysql.connector.Error as errore_db:
+        connessione.rollback()
+        print(f"Errore MySQL: {errore_db}")
+        flash("Si è verificato un errore nella lista.", "error")
+        return redirect(url_for("menu"))
+    finally:
+        if cursor is not None:
+            cursor.close()
+        connessione.close()
 
 
 

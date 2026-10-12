@@ -9,7 +9,7 @@ html {
 body {
     margin:auto;
     background-color: rgba(85, 255, 38, 0.366);
-    padding: 5rem 15rem;
+    padding: 1.5rem 4.5rem;
     display: flex;
     flex-direction: column;
     text-align: center;
@@ -27,7 +27,7 @@ h2 {
 header,
 main {
     width: 100%;
-    max-width: 900px;
+    max-width: 250rem;
     margin: 0 auto;
 }
 
@@ -53,9 +53,7 @@ label {
     max-width: 100%;
 }
 
-/* ========================================
-   CHECKLIST ATTREZZATURA
-======================================== */
+/* CHECKLIST ATTREZZATURA */
 
 .checklist-progress {
     margin-top: 1rem;
@@ -75,7 +73,7 @@ label {
     overflow: hidden;
 }
 
-/* Chromium e browser basati su WebKit */
+Chromium e browser basati su WebKit
 .checklist-progress__bar::-webkit-progress-bar {
     background-color: #e5e7eb;
     border-radius: 999px;
@@ -90,4 +88,8 @@ label {
 .checklist-progress__bar::-moz-progress-bar {
     background-color: #198754;
     border-radius: 999px;
+}
+
+.mb-2{
+    width: 100%;
 }
