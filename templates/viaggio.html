@@ -23,6 +23,9 @@
   <br>
   
   <a href="{{ url_for("lista_partecipanti", id_viaggio=viaggio["id"])}}" class="btn btn-primary">Lista partecipanti</a>
+  <br>
+  <a href="{{ url_for('gestione_spese', id_viaggio=viaggio['id'])}}" class="btn btn-primary">Gestisci Spese</a>
+  <br>
 
   <br>
     <a href="{{ url_for('menu') }}"

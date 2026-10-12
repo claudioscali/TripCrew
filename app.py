@@ -46,7 +46,7 @@ def login():
             return render_template("login.html")
         connessione=tentativo_accesso()
         if connessione is None: 
-            flash("Errrore di connessione al database.", "error")
+            flash("Errore di connessione al database.", "error")
             return render_template("login.html")
         cursor=None
         try:
@@ -68,7 +68,7 @@ def login():
                 flash("Email o password non corretti.", "error")
         except Error as errore_db:
             print(f"Errore MySQL: {errore_db}")
-            flash("Si è verificato un errore durante il login.", "errore")
+            flash("Si è verificato un errore durante il login.", "error")
         finally:
             if cursor is not None:
                 cursor.close()
@@ -489,7 +489,7 @@ def lista_partecipanti(id_viaggio):
             #Elimina un partecipante dalla 
             elif azione== "elimina":
                 utente_da_eliminare=request.form.get("utente_id", "")
-                
+
                 if utente_da_eliminare.isdigit():
                     cursor.execute(
                         """
@@ -538,11 +538,128 @@ def lista_partecipanti(id_viaggio):
         connessione.close()
 
 
+@app.route("/viaggio/<int:id_viaggio>/spese", methods=["GET", "POST"])
+def gestione_spese(id_viaggio):
+    if "id_utente" not in session:
+        return redirect(url_for("login"))
+    id_utente = session["id_utente"]
+    username = session["username"]
+    connessione = tentativo_accesso()
+    
+    if connessione is None:
+        flash("Errore di connessione al database.", "error")
+        return redirect(url_for("menu"))
 
+    cursor = None
+    try:
+        cursor = connessione.cursor(dictionary=True)# 1. Verifica che l'utente possa accedere al viaggio
+        cursor.execute("""
+            SELECT v.id, v.nome FROM viaggi v
+            WHERE v.id = %s AND (
+                v.creatore_id = %s OR EXISTS (
+                    SELECT 1 FROM partecipanti p WHERE p.viaggio_id = v.id AND p.utente_id = %s
+                )
+            )
+        """, (id_viaggio, id_utente, id_utente))
+        viaggio = cursor.fetchone()
 
+        if not viaggio:
+            flash("Viaggio non trovato o non accessibile.", "error")
+            return redirect(url_for("menu"))
 
+        if request.method =="POST":
+            azione = request.form.get("azione")
+            if azione == "aggiungi":
+                descrizione = request.form.get("descrizione", "").strip()
+                importo = request.form.get("importo", "").strip()
+                categoria = request.form.get("categoria", "altro")
+                data = request.form.get("data", "").strip()
+                pagato_da = request.form.get("pagato_da")
 
+                if descrizione and importo and data and pagato_da:
+                    cursor.execute(
+                        """
+                        INSERT INTO spese (viaggio_id, utente_id, descrizione, importo, categoria, data)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (id_viaggio, pagato_da, descrizione, importo, categoria, data))
+                    connessione.commit()
+                    flash("Spesa registrata con successo!", "success")
+                else:
+                    flash("Compila tutti i campi obbligatori.", "error")
+            elif azione =="elimina":
+                spesa_id = request.form.get("spesa_id")
+                if spesa_id:
+                    cursor.execute(
+                        """
+                        DELETE FROM spese WHERE id = %s AND viaggio_id = %s
+                        """, 
+                        (spesa_id, id_viaggio)
+                        )
+                    connessione.commit()
+                    flash("Spesa eliminata.", "success")
+            
+            return redirect(url_for("gestione_spese", id_viaggio=id_viaggio))
 
+        cursor.execute(
+            """
+            SELECT u.id, u.username 
+            FROM utenti u 
+            WHERE u.id = (SELECT creatore_id FROM viaggi WHERE id = %s)
+            UNION
+            SELECT u.id, u.username 
+            FROM utenti u 
+            JOIN partecipanti p ON u.id = p.utente_id 
+            WHERE p.viaggio_id = %s
+            """,
+            (id_viaggio, id_viaggio)
+        )
+        partecipanti = cursor. fetchall()
+        totale_partecipanti = len(partecipanti)
+
+        cursor.execute(
+            """
+            SELECT s.id, s.descrizione, s.importo, s.categoria, s.data, u.username AS pagatore
+            FROM spese s
+            JOIN utenti u ON s.utente_id = u.id
+            WHERE s.viaggio_id = %s
+            ORDER BY s.data DESC
+            """,
+            (id_viaggio,)
+        )
+        spese=cursor.fetchall()
+        totale_spese = sum(float(s["importo"]) for s in spese)
+        quota_capite = totale_spese / totale_partecipanti if totale_partecipanti > 0 else 0
+        
+        # Inizializzo il dizionario dei bilanci per ogni partecipante
+        bilanci = {p["username"]: {"pagato": 0.0, "bilancio": -quota_capite} for p in partecipanti}
+
+        for spesa in spese:
+            pagatore = spesa["pagatore"]
+            importo = float(spesa["importo"])
+            if pagatore in bilanci:
+                bilanci[pagatore]["pagato"] += importo
+                bilanci[pagatore]["bilancio"] += importo
+
+        return render_template(
+            "spese.html", 
+            viaggio=viaggio, 
+            partecipanti=partecipanti, 
+            spese=spese,
+            totale_spese=totale_spese,
+            quota_capite=quota_capite,
+            bilanci=bilanci
+        )
+
+    except mysql.connector.Error as errore_db:
+        print(f"Errore MySQL: {errore_db}")
+        flash("Si è verificato un errore nel calcolo delle spese.", "error")
+        return redirect(url_for("menu"))
+    finally:
+        if cursor: cursor.close()
+        connessione.close()
+                    
+    
 
 
 

@@ -5,14 +5,15 @@
 {% endblock %}
 
 {% block content %}
+<div class="container mt-4 mb-5 text-center">
+  <h1>Login</h1>
+  <form method="post">
+      <label>Email</label><br>
+      <input type="email" name="email" required><br><br>
 
-<h1>Login</h1>
-<form method="post">
-    <label>Email</label><br>
-    <input type="email" name="email" required><br><br>
-
-    <label>Password</label><br>
-    <input type="password" name="password" required><br><br>
-    <button type="submit">Accedi</button>
-</form>
+      <label>Password</label><br>
+      <input type="password" name="password" required><br><br>
+      <button type="submit">Accedi</button>
+  </form>
+</div>
 {% endblock %}

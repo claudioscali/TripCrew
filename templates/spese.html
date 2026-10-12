@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    
+    <h1>Gestione Spese</h1>
+    <h2>{{ viaggio["nome"] }}</h2>
+
+    <!-- CARD RIASSUNTO BILANCI -->
+    <div class="card mb-4" style="background-color: #f8f9fa; border: 2px solid var(--primary-color) !important;">
+        <div class="card-body">
+            <h3>Situazione Conti</h3>
+            <p><strong>Totale speso:</strong> € {{ "%.2f"|format(totale_spese) }}<br>
+               <strong>Quota a persona:</strong> € {{ "%.2f"|format(quota_capite) }}</p>
+            
+            <hr>
+            
+            {% for username, dati in bilanci.items() %}
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-1">
+                    <span><strong>{{ username }}</strong> (Ha pagato: € {{ "%.2f"|format(dati['pagato']) }})</span>
+                    
+                    {% if dati['bilancio'] > 0 %}
+                        <span class="text-success fw-bold">+ € {{ "%.2f"|format(dati['bilancio']) }} (Deve ricevere)</span>
+                    {% elif dati['bilancio'] < 0 %}
+                        <span class="text-danger fw-bold">- € {{ "%.2f"|format(dati['bilancio']|abs) }} (Deve dare)</span>
+                    {% else %}
+                        <span class="text-muted fw-bold">In pari</span>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- ELENCO SPESE -->
+    <h3>Lista Spese</h3>
+    {% if spese %}
+        {% for spesa in spese %}
+            <div class="card mb-2">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong class="text-primary">{{ spesa["descrizione"] }}</strong><br>
+                        <small class="text-muted">{{ spesa["data"] }} | Categoria: {{ spesa["categoria"] }}</small><br>
+                        Pagato da: <strong>{{ spesa["pagatore"] }}</strong>
+                    </div>
+                    
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="fs-5 fw-bold">€ {{ "%.2f"|format(spesa["importo"]) }}</span>
+                        
+                        <form method="POST" onsubmit="return confirm('Vuoi eliminare questa spesa? Il bilancio verrà ricalcolato.');">
+                            <input type="hidden" name="azione" value="elimina">
+                            <input type="hidden" name="spesa_id" value="{{ spesa['id'] }}">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">Elimina</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>Non ci sono ancora spese per questo viaggio.</p>
+    {% endif %}
+
+    <hr class="my-4">
+
+    <!-- FORM AGGIUNGI SPESA -->
+    <h3>Aggiungi una Spesa</h3>
+    <form method="POST" class="mt-3">
+        <input type="hidden" name="azione" value="aggiungi">
+        
+        <div class="mb-3">
+            <label class="form-label">Descrizione spesa (es. Spesa supermercato)</label>
+            <input type="text" name="descrizione" class="form-control" required>
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">Importo (€)</label>
+            <input type="number" step="0.01" min="0" name="importo" class="form-control" required>
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">Categoria</label>
+            <select name="categoria" class="form-control" required>
+                <option value="cibo">Cibo & Bevande</option>
+                <option value="campeggio">Pernottamento / Campeggio</option>
+                <option value="trasporto">Trasporto / Benzina</option>
+                <option value="attivita">Attività / Escursioni</option>
+                <option value="altro">Altro</option>
+            </select>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Data</label>
+            <input type="date" name="data" class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Chi ha pagato?</label>
+            <select name="pagato_da" class="form-control" required>
+                {% for p in partecipanti %}
+                    <!-- Pre-seleziona l'utente attualmente loggato (tu) per comodità -->
+                    <option value="{{ p['id'] }}" {% if p['id'] == session['id_utente'] %}selected{% endif %}>
+                        {{ p['username'] }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <button type="submit" class="btn btn-primary mt-2">Aggiungi Spesa</button>
+    </form>
+
+    <a href="{{ url_for('viaggio', id_viaggio=viaggio['id']) }}" class="btn btn-outline-secondary mt-3">
+        Torna al viaggio
+    </a>
+</div>
+{% endblock %}
