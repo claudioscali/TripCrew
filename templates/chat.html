@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex flex-column chat-wrapper"> 
+    
+    <div class="container mt-3 flex-grow-1 d-flex flex-column overflow-hidden">
+        <h2>{{ viaggio["nome"] }} - Chat</h2>
+
+        <div class="chat-messages flex-grow-1 overflow-auto p-3 mb-3 bg-light rounded border" id="chatContainer">
+            {% if messaggi %}
+                {% for msg in messaggi %}
+                    {% if msg.utente_id == utente_corrente_id %}
+                        <!-- Messaggio TUO -->
+                        <div class="card mb-2 ms-auto shadow-sm msg-own">
+                            <div class="card-body p-2">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <strong class="text-success">Tu</strong>
+                                    
+                                    <div class="d-flex align-items-center">
+                                        <small class="text-muted me-2 msg-timestamp">{{ msg.data_formattata }}</small>
+                                        
+                                        <!-- Menù a tendina (3 puntini) -->
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm p-0 border-0 bg-transparent kebab-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                                &#8942;
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                                <li>
+                                                    <form method="POST" onsubmit="return confirm('Vuoi eliminare questo messaggio?');">
+                                                        <input type="hidden" name="azione" value="elimina">
+                                                        <input type="hidden" name="messaggio_id" value="{{ msg.id }}">
+                                                        <button type="submit" class="btn-delete-pill">Elimina messaggio</button>
+                                                    </form>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p class="mb-0 msg-text">{{ msg.testo }}</p>
+                            </div>
+                        </div>
+                    {% else %}
+                        <!-- Messaggio DEGLI ALTRI -->
+                        <div class="card mb-2 me-auto shadow-sm msg-other">
+                            <div class="card-body p-2">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <strong class="text-primary">{{ msg.username }}</strong> 
+                                    <small class="text-muted msg-timestamp">{{ msg.data_formattata }}</small>
+                                </div>
+                                <p class="mb-0 msg-text">{{ msg.testo }}</p>
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <p class="text-center text-muted mt-3">Nessun messaggio. Inizia tu la conversazione!</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Barra di testo -->
+    <div class="bg-white border-top p-3 sticky-bottom shadow-lg">
+        <form method="POST" class="container chat-input-wrapper">
+            <input type="hidden" name="azione" value="invia">
+            <div class="input-group">
+                <input type="text" name="testo" class="form-control rounded-pill me-2" placeholder="Scrivi un messaggio..." required autocomplete="off">
+                <button class="btn btn-primary rounded-pill px-4" type="submit">Invia</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        var chatContainer = document.getElementById("chatContainer");
+        var chatInput = document.querySelector('input[name="testo"]');
+        var formInvio = document.querySelector('.chat-input-wrapper');
+        
+        // Funzione per spingere la chat in basso
+        function scorriInFondo() {
+            if (chatContainer) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }
+        
+        // 1. Vai in fondo appena si apre la chat
+        scorriInFondo();
+
+        // 2. Quando la tastiera si apre, aspetta un attimo e aggiusta la visuale
+        if (chatInput) {
+            chatInput.addEventListener("focus", function() {
+                setTimeout(scorriInFondo, 300);
+            });
+        }
+        
+        // 3. IL MOTORE IN TEMPO REALE (Polling Intelligente)
+        function aggiornaChat() {
+            // Controlla se c'è un menù a tendina aperto al momento (.show è la classe usata da Bootstrap)
+            var menuAperto = chatContainer.querySelector('.dropdown-menu.show');
+            
+            // Se c'è un menù aperto, salta l'aggiornamento per questo turno
+            if (menuAperto) {
+                return; 
+            }
+
+            // Altrimenti, procedi con l'aggiornamento invisibile
+            fetch(window.location.href)
+                .then(response => response.text())
+                .then(html => {
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(html, 'text/html');
+                    var nuovoContainer = doc.getElementById('chatContainer');
+                    
+                    if (nuovoContainer && chatContainer) {
+                        if (chatContainer.innerHTML !== nuovoContainer.innerHTML) {
+                            var isScrolledToBottom = Math.abs((chatContainer.scrollHeight - chatContainer.clientHeight) - chatContainer.scrollTop) < 50;
+                            
+                            chatContainer.innerHTML = nuovoContainer.innerHTML;
+                            
+                            if (isScrolledToBottom) {
+                                scorriInFondo();
+                            }
+                        }
+                    }
+                })
+                .catch(errore => console.error("Errore di connessione:", errore));
+        }
+
+        // Fai partire il controllo automatico ogni 3 secondi (3000 millisecondi)
+        setInterval(aggiornaChat, 3000);
+
+        // 4. INVIO ISTANTANEO (AJAX)
+        if (formInvio) {
+            formInvio.addEventListener('submit', function(e) {
+                e.preventDefault(); // Blocca il caricamento standard della pagina
+                
+                // Prende il testo scritto
+                var formData = new FormData(formInvio);
+                
+                // Lo invia al server in background
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                }).then(() => {
+                    formInvio.reset(); // Svuota la barra di testo
+                    aggiornaChat();    // Richiama i messaggi per mostrare subito il tuo
+                    setTimeout(scorriInFondo, 100);
+                });
+            });
+        }
+    });
+</script>
+
+
+
+
+{% endblock %}

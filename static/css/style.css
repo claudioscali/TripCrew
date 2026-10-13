@@ -365,37 +365,42 @@ a:hover {
 /* 6. MESSAGGI FLASH ======================================================= */
 /* base.html stampa i flash come <p class="{{ categoria }}"> figli diretti del body */
 
-body > p {
-  width: min(100%, 42rem);
-  margin: 0 0 1rem;
-  padding: .85rem 1.1rem .85rem 1.25rem;
-  text-align: left;
-  font-weight: 500;
-  color: var(--ink);
-  background: var(--lake-soft);
-  border: 1px solid var(--line);
-  border-left: .4rem solid var(--lake);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-sm);
-  animation: slide-down .4s ease-out both;
+p.success, 
+p.error, 
+p.errore, 
+p.danger {
+    max-width: 42rem;
+    margin: 1rem auto; /* Centra il messaggio nella pagina */
+    padding: .85rem 1.1rem .85rem 1.25rem;
+    text-align: left;
+    font-weight: 500;
+    color: var(--ink);
+    background: var(--lake-soft);
+    border: 1px solid var(--line);
+    border-left: .4rem solid var(--line);
+    border-radius: var(--radius-sm);
+    box-shadow:  var(--shadow-sm);
+    animation: slide-down .4s ease-out both;
 }
 
-body > p.success {
-  background: var(--ok-soft);
-  border-left-color: var(--ok);
+p.success {
+    background: var(--ok-soft);
+    /* border-color: #c8e6c9; */
+    border-left-color: var(--ok);
 }
 
-body > p.error,
-body > p.errore,
-body > p.danger {
-  background: var(--danger-soft);
-  border-left-color: var(--danger);
+p.error,
+p.errore,
+p.danger {
+    background:  var(--danger-soft);
+    /* border-color: #ffcdd2; */
+    border-left-color: var(--danger);
 }
 
 @keyframes slide-down {
-  from { opacity: 0; transform: translateY(-.75rem); }
-  to   { opacity: 1; transform: none; }
-}
+    from { opacity: 0; transform: translateY(-.75rem); }
+    to   { opacity: 1; transform: none; }
+} */
 
 
 /* 7. PULSANTI ============================================================= */
@@ -1127,4 +1132,259 @@ main > div:not(.container) > .btn {
     border: 1px solid #999;
     break-inside: avoid;
   }
+}
+
+/* Card in evidenza (es. Riassunto Bilanci Spese) */
+.card-highlight {
+    background-color: #f8f9fa !important;
+    border: 2px solid var(--primary-color) !important;
+}
+
+
+/* =========================================
+   Stile Navbar "Outdoor" (Sfondo chiaro)
+   ========================================= */
+.navbar-outdoor {
+    /* Usa il colore panna/rosa chiaro dello sfondo, oppure puoi metterne uno personalizzato (es: #ffe8e8) */
+    background-color: var(--bg-color); 
+    /* Aggiunge una leggerissima ombra sotto la barra per staccarla dal resto della pagina */
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); 
+}
+
+/* Colore del Titolo/Logo (🏕️ TripCrew) */
+.navbar-outdoor .navbar-brand {
+    color: var(--primary-color) !important; /* Verde Scuro */
+    font-size: 1.5rem;
+}
+
+/* Colore dei Link di navigazione */
+.navbar-outdoor .nav-link {
+    color: var(--text-main) !important; /* Grigio scuro per ottima leggibilità */
+    font-weight: 700;
+    transition: color 0.3s ease;
+}
+
+/* Effetto quando passi il mouse sui Link */
+.navbar-outdoor .nav-link:hover {
+    color: var(--accent-color) !important; /* Diventa arancione/rosso al passaggio */
+}
+
+/* Rende rosso il bottone "Esci" per evidenziarlo */
+.navbar-outdoor .nav-link.text-warning {
+    color: #dc3545 !important; 
+}
+
+/* =========================================
+   Personalizzazione dell'Hamburger Menu
+   ========================================= */
+/* Bordo del pulsante hamburger */
+.navbar-outdoor .navbar-toggler {
+    border-color: rgba(43, 92, 58, 0.2); /* Bordo verde semitrasparente */
+}
+
+/* Disegna le 3 righine dell'hamburger in Verde Scuro (altrimenti sarebbero bianche e invisibili) */
+.navbar-outdoor .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg viewBox='0 0 30 30' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath stroke='rgba(43, 92, 58, 1)' stroke-width='2' stroke-linecap='round' stroke-miterlimit='10' d='M4 7h22M4 15h22M4 23h22'/%3E%3C/svg%3E");
+}
+
+/* (Opzionale) Toglie il bordo nero quadrato brutto quando clicchi l'hamburger */
+.navbar-outdoor .navbar-toggler:focus {
+    box-shadow: 0 0 0 0.25rem rgba(43, 92, 58, 0.25);
+}
+
+/* =========================================
+   Layout Chat di Viaggio
+   ========================================= */
+.chat-wrapper {
+    /* Sottrae l'altezza approssimativa della navbar per evitare lo scroll della pagina intera */
+    height: calc(100dvh - 70px); 
+}
+
+.chat-input-wrapper {
+    max-width: 900px;
+}
+
+/* Stili specifici per i baloon dei messaggi */
+.msg-own {
+    max-width: 85%;
+    background-color: #d1e7dd !important; /* Verde chiaro per i tuoi messaggi */
+    border-color: #badbcc !important;
+}
+
+.msg-other {
+    max-width: 85%;
+    background-color: #ffffff !important; /* Bianco per i messaggi altrui */
+}
+
+
+/* =========================================
+   Pulsante Elimina Messaggio (Nuovo Stile)
+   ========================================= */
+
+/* Spazio interno alla tendina  da rimettere quando aggiungerò altre funzioni sui messaggi*/
+/* .delete-dropdown-menu {
+    padding: 0.5rem !important;
+    min-width: 160px;
+} */
+
+/* Rende il riquadro di Bootstrap invisibile, lasciando solo il bottone */
+.dropdown-menu {
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    min-width: auto !important;
+    margin-top: 0 !important; /* Distanzia leggermente la pillola dai 3 puntini */
+}
+
+/* Trasforma il link in un bottone a pillola rosso (stesso stile di "Invia") */
+.btn-delete-pill {
+    display: block;
+    width: 100%;
+    background-color: #dc3545 !important; /* Rosso */
+    color: #ffffff !important;
+    border: none !important;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    padding: 0.4rem 1rem !important;
+    border-radius: 50px !important; /* Pillola */
+    transition: background-color 0.15s ease-in-out;
+}
+
+/* Comportamento al passaggio del mouse o al tocco (Più scuro) */
+.btn-delete-pill:hover,
+.btn-delete-pill:active,
+.btn-delete-pill:focus {
+    background-color: #b02a37 !important; /* Rosso scuro */
+    color: #ffffff !important;
+}
+
+/* --- ADATTAMENTO DARK MODE --- */
+@media (prefers-color-scheme: dark) {
+    /* Adatta il rosso per non abbagliare in modalità scura,
+       mantenendolo più morbido ma sempre in stile pillola */
+    .btn-delete-pill {
+        background-color: #e53935 !important; /* Rosso scuro visibile */
+    }
+    
+    .btn-delete-pill:hover,
+    .btn-delete-pill:active,
+    .btn-delete-pill:focus {
+        background-color: #c62828 !important; /* Rosso ancora più profondo */
+    }
+    .delete-dropdown-menu {
+        background-color: transparent !important;
+        border: none !important;
+    }
+}
+
+/* =========================================
+   TEMA NOTTURNO (Dark Mode Nativa)
+   ========================================= */
+@media (prefers-color-scheme: dark) {
+    :root {
+        /* Sostituisce i colori chiari con toni scuri e profondi */
+        --bg-color: #121412;        /* Grigio/Verde scurissimo per lo sfondo */
+        --text-main: #e8e8e8;       /* Testo grigio chiaro per non affaticare gli occhi */
+        --card-bg: #1e221f;         /* Sfondo dei contenitori leggermente più chiaro */
+    }
+
+    /* 1. Sistema lo sfondo della chat e della barra inferiore */
+    .bg-light, 
+    .bg-white {
+        background-color: var(--card-bg) !important;
+        border-color: #2f3631 !important;
+    }
+
+    /* 2. Sistema l'input di testo e lo rende visibile */
+    input.form-control,
+    select.form-control,
+    textarea.form-control {
+        background-color: #2a2f2c !important;
+        color: #ffffff !important;
+        border-color: #3b423e !important;
+    }
+
+    /* 3. Risolve il problema della scritta "Scrivi un messaggio..." invisibile */
+    input.form-control::placeholder {
+        color: #9ba39e !important;
+        opacity: 1; /* Disattiva la trasparenza di default del browser */
+    }
+
+    /* 4. Colori dei baloon della chat adattati alla notte */
+    .msg-own {
+        background-color: #1e4229 !important; /* Verde foresta scuro per i tuoi messaggi */
+        border-color: #2b5c3a !important;
+        color: #ffffff !important;
+    }
+
+    .msg-other {
+        background-color: #2a2f2c !important; /* Grigio scuro per i messaggi altrui */
+        border-color: #3b423e !important;
+        color: #ffffff !important;
+    }
+    
+    /* 5. Aggiusta i colori dei testi specifici per risaltare sullo scuro */
+    .text-success { color: #66bb6a !important; }
+    .text-primary { color: #64b5f6 !important; }
+    .text-muted { color: #9ba39e !important; }
+
+    /* 6. Sistema la sezione Spese (Card normali e Riassunto) */
+    .card {
+        background-color: var(--card-bg) !important;
+        border-color: #2f3631 !important;
+    }
+
+    .card-highlight {
+        background-color: #121412 !important; /* Sfondo scuro per il riassunto */
+        border: 2px solid #3a7c50 !important; /* Bordo verde leggermente più chiaro per risaltare */
+    }
+
+    /* 7. Colora le linee di separazione tra gli utenti nel riassunto */
+    .border-bottom {
+        border-color: #2f3631 !important;
+    }
+
+    /* 8. Adatta il rosso dei debiti (Deve dare) per non affaticare gli occhi */
+    .text-danger { 
+        color: #ef5350 !important; 
+    }
+    /* 9. Sistema la tendina del menù (Kebab menu) */
+    .dropdown-menu {
+        background-color: var(--card-bg) !important;
+        border-color: #3b423e !important;
+    }
+
+    /* Colore di sfondo quando selezioni un elemento della tendina */
+    .dropdown-item:hover, 
+    .dropdown-item:focus {
+        background-color: #2a2f2c !important; 
+    }
+
+    /* Assicurati che il pulsante elimina rimanga ben visibile */
+    .dropdown-item.text-danger {
+        color: #ef5350 !important; /* Mantiene il rosso chiaro che abbiamo definito prima */
+    }
+}
+
+/* =========================================
+   Elementi interni della Chat
+   ========================================= */
+
+/* Testo del messaggio: forza l'andata a capo per link molto lunghi */
+.msg-text {
+    word-break: break-word;
+}
+
+/* Dimensione ridotta per la data e l'ora */
+.msg-timestamp {
+    font-size: 0.75rem;
+}
+
+/* Stile per il pulsante "3 puntini" (kebab menu) */
+.kebab-btn {
+    font-size: 1.2rem;
+    line-height: 1;
+    color: inherit;
 }

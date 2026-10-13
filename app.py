@@ -75,6 +75,13 @@ def login():
             connessione.close()
     return render_template("login.html")
 
+
+@app.route("/logout")
+def logout():
+    session.clear() # Cancella tutti i dati della sessione (id_utente e username)
+    flash("Hai effettuato la disconnessione.", "success")
+    return redirect(url_for("home"))
+
 @app.route("/registrazione", methods=["POST","GET"])
 def registrazione():
     if request.method=="POST":
@@ -552,7 +559,7 @@ def gestione_spese(id_viaggio):
 
     cursor = None
     try:
-        cursor = connessione.cursor(dictionary=True)# 1. Verifica che l'utente possa accedere al viaggio
+        cursor = connessione.cursor(dictionary=True)
         cursor.execute("""
             SELECT v.id, v.nome FROM viaggi v
             WHERE v.id = %s AND (
@@ -659,7 +666,96 @@ def gestione_spese(id_viaggio):
         if cursor: cursor.close()
         connessione.close()
                     
+@app.route("/viaggio/<int:id_viaggio>/chat", methods=["GET", "POST"])
+def chat_viaggio(id_viaggio):
+    if "id_utente" not in session:
+        return redirect(url_for("login"))
     
+    id_utente = session["id_utente"]
+    username = session["username"]
+    connessione = tentativo_accesso()
+    
+    if connessione is None:
+        flash("Errore di connessione al database.", "error")
+        return redirect(url_for("menu"))
+
+    cursor = None
+    try:
+        cursor = connessione.cursor(dictionary=True)
+        
+        # 1. Verifica accesso al viaggio
+        cursor.execute("""
+            SELECT v.id, v.nome FROM viaggi v
+            WHERE v.id = %s AND (
+                v.creatore_id = %s OR EXISTS (
+                    SELECT 1 FROM partecipanti p WHERE p.viaggio_id = v.id AND p.utente_id = %s
+                )
+            )
+        """, (id_viaggio, id_utente, id_utente))
+        viaggio = cursor.fetchone()
+
+        if not viaggio:
+            flash("Viaggio non trovato o non accessibile.", "error")
+            return redirect(url_for("menu"))
+
+        # 2. Gestione POST (Aggiungi/Elimina messaggio)
+        if request.method == "POST":
+            azione = request.form.get("azione")
+            
+            if azione == "invia":
+                testo = request.form.get("testo", "").strip()
+                if testo:
+                    cursor.execute("""
+                        INSERT INTO messaggi_chat (viaggio_id, utente_id, testo)
+                        VALUES (%s, %s, %s)
+                    """, (id_viaggio, id_utente, testo))
+                    connessione.commit()
+                else:
+                    flash("Il messaggio non può essere vuoto.", "error")
+                    
+            elif azione == "elimina":
+                messaggio_id = request.form.get("messaggio_id")
+                
+                # Cerca il messaggio per verificare che esista
+                cursor.execute("SELECT utente_id FROM messaggi_chat WHERE id = %s", (messaggio_id,))
+                messaggio = cursor.fetchone()
+                
+                if messaggio:
+                    # Controllo di sicurezza: l'utente loggato è l'autore del messaggio?
+                    if messaggio["utente_id"] == id_utente:
+                        cursor.execute("DELETE FROM messaggi_chat WHERE id = %s", (messaggio_id,))
+                        connessione.commit()
+                        flash("Messaggio eliminato.", "success")
+                    else:
+                        flash("Non puoi eliminare i messaggi degli altri utenti.", "error")
+
+            return redirect(url_for("chat_viaggio", id_viaggio=id_viaggio))
+
+        # 3. Recupera i messaggi
+        cursor.execute("""
+            SELECT m.id, m.testo, DATE_FORMAT(m.data_ora, '%d/%m/%Y %H:%i') as data_formattata, 
+                   m.utente_id, u.username
+            FROM messaggi_chat m
+            JOIN utenti u ON m.utente_id = u.id
+            WHERE m.viaggio_id = %s
+            ORDER BY m.data_ora ASC
+        """, (id_viaggio,))
+        messaggi = cursor.fetchall()
+
+        return render_template(
+            "chat.html", 
+            viaggio=viaggio, 
+            messaggi=messaggi,
+            utente_corrente_id=id_utente
+        )
+
+    except mysql.connector.Error as errore_db:
+        print(f"Errore MySQL: {errore_db}")
+        flash("Si è verificato un errore nel caricamento della chat.", "error")
+        return redirect(url_for("menu"))
+    finally:
+        if cursor: cursor.close()
+        connessione.close()
 
 
 

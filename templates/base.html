@@ -3,25 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Sito TripCrew{% endblock %}</title>
+    <title>{% block title %}TripCrew{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-
-    {% with messaggi = get_flashed_messages(with_categories=true) %}
-    {% for categoria, messaggio in messaggi %}
-        <p class="{{ categoria }}">
-        {{ messaggio }}
-        </p>
-    {% endfor %}
-    {% endwith %}
-  <header>
-    <!-- <h1>Flask base</h1> -->
-  </header>
-
+  <!-- NAVBAR RESPONSIVE -->
+    <nav class="navbar navbar-expand-lg navbar-outdoor w-100">
+      <div class="container-fluid px-4">
+        <a class="navbar-brand fw-bold" href="/">🏕️ TripCrew</a>
+        
+        <!-- Pulsante Hamburger per Mobile -->
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        
+        <!-- Link della Navbar -->
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            {% if session.get('id_utente') %}
+              <!-- Mostrati solo se l'utente è loggato -->
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('menu') }}">I miei Viaggi</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('create_trip') }}">Nuovo Viaggio</a>
+              </li>
+              {% if viaggio is defined %}
+                <li class="nav-item">
+                  <a class="nav-link text-info fw-bold" href="{{ url_for('chat_viaggio', id_viaggio=viaggio['id']) }}">💬 Chat del Viaggio</a>
+                </li>
+              {% endif %}
+              <li class="nav-item">
+                <a class="nav-link text-warning" href="{{ url_for('logout') }}">Esci ({{ session['username'] }})</a>
+              </li>
+            {% else %}
+              <!-- Mostrati se l'utente NON è loggato -->
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('login') }}">Accedi</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('registrazione') }}">Registrati</a>
+              </li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+    </nav>
   <main>
+
+      {% with messaggi = get_flashed_messages(with_categories=true) %}
+      {% for categoria, messaggio in messaggi %}
+          <p class="{{ categoria }}">
+          {{ messaggio }}
+          </p>
+      {% endfor %}
+      {% endwith %}
+
     {% block content %}{% endblock %}
   </main>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
