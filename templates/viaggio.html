@@ -28,6 +28,14 @@
   <br>
   <a href="{{ url_for('chat_viaggio', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">Bacheca Chat</a>
   <br>
+    {% if viaggio["creatore_id"] == session["id_utente"] %}
+    <form method="POST"
+          action="{{ url_for('elimina_viaggio', id_viaggio=viaggio['id']) }}"
+          onsubmit="return confirm('Vuoi eliminare questo viaggio? Verranno eliminati anche attrezzatura, partecipanti, spese e messaggi.');">
+      <button type="submit" class="btn btn-outline-danger mt-3">Elimina viaggio</button>
+    </form>
+  {% endif %}
+  <br>
     <a href="{{ url_for('menu') }}"
        class="btn btn-outline-secondary mt-3">
         Torna al menu

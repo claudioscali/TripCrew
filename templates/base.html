@@ -46,6 +46,10 @@
                 <a class="nav-link" href="{{ url_for('registrazione') }}">Registrati</a>
               </li>
             {% endif %}
+            <!-- Pulsante Toggle Dark Mode -->
+            <button class="btn btn-outline-secondary btn-sm ms-2" id="darkModeToggle" type="button" title="Cambia tema">
+                🌓 <span class="d-none d-md-inline">Tema</span>
+            </button>
           </ul>
         </div>
       </div>
@@ -63,5 +67,35 @@
     {% block content %}{% endblock %}
   </main>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        var toggleBtn = document.getElementById("darkModeToggle");
+        var body = document.body;
+
+        // 1. Controlla se c'è una preferenza salvata nel browser
+        var savedTheme = localStorage.getItem("tripcrew_theme");
+        if (savedTheme === "dark") {
+            body.classList.add("dark-mode");
+        } else if (savedTheme === "light") {
+            body.classList.remove("dark-mode");
+        }
+
+        // 2. Gestisci il click sul pulsante
+        if (toggleBtn) {
+            toggleBtn.addEventListener("click", function() {
+                body.classList.toggle("dark-mode");
+                
+                // Salva la scelta dell'utente nella memoria del browser
+                if (body.classList.contains("dark-mode")) {
+                    localStorage.setItem("tripcrew_theme", "dark");
+                } else {
+                    localStorage.setItem("tripcrew_theme", "light");
+                }
+            });
+        }
+    });
+</script>
+
 </body>
 </html>

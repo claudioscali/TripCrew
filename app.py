@@ -260,7 +260,7 @@ def viaggio(id_viaggio):
     try: 
         cursor=connessione.cursor(dictionary=True)
         query="""
-        SELECT DISTINCT v.id, v.nome, v.destinazione, v.data_inizio, v.data_fine, v.budget_persona, t.nome AS tipo_viaggio 
+        SELECT DISTINCT v.id, v.nome, v.destinazione, v.data_inizio, v.data_fine, v.budget_persona, v.creatore_id, t.nome AS tipo_viaggio 
         FROM viaggi v 
         JOIN tipologie_viaggio t ON t.id=v.tipo_viaggio_id
         LEFT JOIN partecipanti p ON v.id=p.viaggio_id
@@ -286,6 +286,49 @@ def viaggio(id_viaggio):
         if cursor is not None:
             cursor.close()
         connessione.close()
+
+
+@app.route("/viaggio/<int:id_viaggio>/elimina", methods=["POST"])
+def elimina_viaggio(id_viaggio):
+    if "id_utente" not in session:
+        return redirect(url_for("login"))
+    id_utente = session["id_utente"]
+
+    connessione = tentativo_accesso()
+    if connessione is None:
+        flash("Errore di connessione al database.", "error")
+        return redirect(url_for("menu"))
+
+    cursor = None
+    try:
+        cursor = connessione.cursor()
+
+        # solo il creatore può eliminare il viaggio
+        cursor.execute(
+            "SELECT id FROM viaggi WHERE id = %s AND creatore_id = %s",
+            (id_viaggio, id_utente)
+        )
+        if cursor.fetchone() is None:
+            flash("Viaggio non trovato o non hai il permesso di eliminarlo.", "error")
+            return redirect(url_for("menu"))
+
+        # un solo DELETE: attrezzatura, partecipanti, spese e messaggi
+        # vengono cancellati da MySQL grazie a ON DELETE CASCADE
+        cursor.execute("DELETE FROM viaggi WHERE id = %s", (id_viaggio,))
+
+        connessione.commit()
+        flash("Viaggio eliminato.", "success")
+        return redirect(url_for("menu"))
+    except mysql.connector.Error as errore_db:
+        connessione.rollback()
+        print(f"Errore MySQL: {errore_db}")
+        flash("Impossibile eliminare il viaggio.", "error")
+        return redirect(url_for("viaggio", id_viaggio=id_viaggio))
+    finally:
+        if cursor is not None:
+            cursor.close()
+        connessione.close()
+
 
 @app.route("/viaggio/<int:id_viaggio>/attrezzatura", methods=["GET","POST"])
 def checklist_attrezzatura(id_viaggio):
