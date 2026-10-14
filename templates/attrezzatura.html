@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 
 {% block content %}
@@ -7,152 +6,147 @@
     <h1>Checklist attrezzatura</h1>
     <h2>{{ viaggio["nome"] }}</h2>
 
-    <p>
-        Oggetti preparati:
-        <strong>{{ preparati }} / {{ totale }}</strong>
-    </p>
-
-
+    <p>Oggetti preparati (i tuoi + gruppo): <strong>{{ preparati }} / {{ totale }}</strong></p>
 
     {% if totale > 0 %}
         {% set percentuale = ((preparati / totale) * 100)|round|int %}
-
         <div class="checklist-progress mb-4">
-            <div class="checklist-progress__label">
-                Completamento: {{ percentuale }}%
-            </div>
-
-            <progress
-                class="checklist-progress__bar"
-                value="{{ preparati }}"
-                max="{{ totale }}"
-                aria-label="Completamento della checklist">
-                {{ percentuale }}%
-            </progress>
+            <div class="checklist-progress__label">Completamento: {{ percentuale }}%</div>
+            <progress class="checklist-progress__bar" value="{{ preparati }}" max="{{ totale }}">{{ percentuale }}%</progress>
         </div>
     {% endif %}
 
+    <!-- ==================== SEZIONE GRUPPO ==================== -->
+    <h3 class="mt-4">⛺ Attrezzatura di Gruppo</h3>
+    <p class="text-muted">Oggetti condivisi. Chi si offre di portarli?</p>
+    
+    {% for item in oggetti_gruppo %}
+        <div class="card mb-2 {% if item.preparato %}border-success{% endif %}">
+            <div class="card-body d-flex justify-content-between align-items-center gap-3">
+                <div>
+                    <strong class="{% if item.preparato %}text-success{% endif %}">{{ item.nome }}</strong>
+                    <div><small>{{ item.categoria }}</small></div>
+                    {% if item.descrizione %}<p class="mb-0">{{ item.descrizione }}</p>{% endif %}
+                </div>
 
-
-    <h3>La tua attrezzatura</h3>
-
-    {% if oggetti %}
-        {% for item in oggetti %}
-            <div class="card mb-2">
-                <div class="card-body d-flex justify-content-between
-                            align-items-center gap-3">
-
-                    <div>
-                        {% if item["preparato"] %}
-                            <span class="text-success">
-                                <strong>{{ item["nome"] }}</strong>
-                            </span>
-                        {% else %}
-                            <strong>{{ item["nome"] }}</strong>
-                        {% endif %}
-
-                        <div>
-                            <small>{{ item["categoria"] }}</small>
-                        </div>
-
-                        {% if item["descrizione"] %}
-                            <p class="mb-0">
-                                {{ item["descrizione"] }}
-                            </p>
-                        {% endif %}
-                    </div>
-
-                    <div class="d-flex gap-2">
+                <div class="d-flex gap-2 align-items-center">
+                    {% if not item.utente_id %}
+                        <!-- Non assegnato a nessuno -->
+                        <span class="text-warning fw-bold me-2">Da assegnare</span>
                         <form method="POST">
-                            <input type="hidden" name="azione"
-                                   value="toggle">
-                            <input type="hidden" name="item_id"
-                                   value="{{ item['id'] }}">
-
-                            {% if item["preparato"] %}
-                                <input type="hidden" name="preparato"
-                                       value="0">
-                                <button type="submit"
-                                        class="btn btn-outline-secondary">
-                                    Da preparare
-                                </button>
-                            {% else %}
-                                <input type="hidden" name="preparato"
-                                       value="1">
-                                <button type="submit"
-                                        class="btn btn-success">
-                                    Preparato
-                                </button>
-                            {% endif %}
+                            <input type="hidden" name="azione" value="assegna">
+                            <input type="hidden" name="item_id" value="{{ item.id }}">
+                            <button type="submit" class="btn btn-primary btn-sm">Lo porto io!</button>
                         </form>
-
-                        <form method="POST"
-                              onsubmit="return confirm(
-                                  'Vuoi eliminare questo oggetto?'
-                              );">
-                            <input type="hidden" name="azione"
-                                   value="elimina">
-                            <input type="hidden" name="item_id"
-                                   value="{{ item['id'] }}">
-                            <button type="submit"
-                                    class="btn btn-outline-danger">
-                                Elimina
+                    {% elif item.utente_id == id_utente %}
+                        <!-- Assegnato a TE -->
+                        <span class="text-success fw-bold me-2">Lo porti tu</span>
+                        
+                        <form method="POST">
+                            <input type="hidden" name="azione" value="toggle">
+                            <input type="hidden" name="item_id" value="{{ item.id }}">
+                            <input type="hidden" name="preparato" value="{% if item.preparato %}0{% else %}1{% endif %}">
+                            <button type="submit" class="btn {% if item.preparato %}btn-success{% else %}btn-outline-secondary{% endif %} btn-sm">
+                                {% if item.preparato %}Preparato ✓{% else %}Da preparare{% endif %}
                             </button>
                         </form>
-                    </div>
+                        
+                        <form method="POST" onsubmit="return confirm('Sicuro di non poterlo più portare?');">
+                            <input type="hidden" name="azione" value="rimuovi_assegnazione">
+                            <input type="hidden" name="item_id" value="{{ item.id }}">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">X</button>
+                        </form>
+                    {% else %}
+                        <!-- Assegnato a un ALTRO partecipante -->
+                        <span class="text-info fw-bold me-2">Lo porta {{ item.assegnato_a }}</span>
+                        {% if item.preparato %}
+                            <span class="badge bg-success">Pronto</span>
+                        {% else %}
+                            <span class="badge bg-secondary">In preparazione</span>
+                        {% endif %}
+                    {% endif %}
 
+                    <!-- Il creatore o chiunque può comunque eliminare un oggetto -->
+                    <form method="POST" onsubmit="return confirm('Vuoi eliminare questo oggetto?');">
+                        <input type="hidden" name="azione" value="elimina">
+                        <input type="hidden" name="item_id" value="{{ item.id }}">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">Elimina</button>
+                    </form>
                 </div>
             </div>
-        {% endfor %}
+        </div>
+    {% endfor %}
+
+    <!-- ==================== SEZIONE PERSONALE ==================== -->
+    <h3 class="mt-5">🎒 La mia Attrezzatura Personale</h3>
+    <p class="text-muted">Oggetti che ognuno deve portare per sé nello zaino.</p>
+
+    {% for item in oggetti_personali %}
+        <div class="card mb-2">
+            <div class="card-body d-flex justify-content-between align-items-center gap-3">
+                <div>
+                    <strong class="{% if item.preparato %}text-success{% endif %}">{{ item.nome }}</strong>
+                    <div><small>{{ item.categoria }}</small></div>
+                    {% if item.descrizione %}<p class="mb-0">{{ item.descrizione }}</p>{% endif %}
+                </div>
+
+                <div class="d-flex gap-2">
+                    <form method="POST">
+                        <input type="hidden" name="azione" value="toggle">
+                        <input type="hidden" name="item_id" value="{{ item.id }}">
+                        <input type="hidden" name="preparato" value="{% if item.preparato %}0{% else %}1{% endif %}">
+                        <button type="submit" class="btn {% if item.preparato %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                            {% if item.preparato %}Preparato ✓{% else %}Da preparare{% endif %}
+                        </button>
+                    </form>
+
+                    <form method="POST" onsubmit="return confirm('Vuoi eliminare questo oggetto dalla tua lista?');">
+                        <input type="hidden" name="azione" value="elimina">
+                        <input type="hidden" name="item_id" value="{{ item.id }}">
+                        <button type="submit" class="btn btn-outline-danger">Elimina</button>
+                    </form>
+                </div>
+            </div>
+        </div>
     {% else %}
-        <p>
-            La checklist è vuota. Puoi aggiungere gli oggetti
-            che ti servono usando il modulo qui sotto.
-        </p>
-    {% endif %}
+        <p>Non hai attrezzatura personale per questo viaggio.</p>
+    {% endfor %}
 
     <hr class="my-4">
 
+    <!-- FORM AGGIUNTA -->
     <h3>Aggiungi un oggetto</h3>
-
     <form method="POST">
         <input type="hidden" name="azione" value="aggiungi">
 
         <div class="mb-3">
-            <label for="nome" class="form-label">
-                Nome dell'oggetto *
-            </label>
-            <input type="text" id="nome" name="nome"
-                   class="form-control" maxlength="100" required>
+            <label for="nome" class="form-label">Nome dell'oggetto *</label>
+            <input type="text" id="nome" name="nome" class="form-control" required>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label for="categoria" class="form-label">Categoria</label>
+                <input type="text" id="categoria" name="categoria" class="form-control" placeholder="Es. Abbigliamento">
+            </div>
+            
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Tipo di Assegnazione</label>
+                <select name="tipo_oggetto" class="form-control" required>
+                    <option value="condiviso">⛺ Di Gruppo (ne basta uno, qualcuno lo porterà)</option>
+                    <option value="personale">🎒 Personale (ognuno porta il suo)</option>
+                </select>
+            </div>
         </div>
 
         <div class="mb-3">
-            <label for="categoria" class="form-label">
-                Categoria
-            </label>
-            <input type="text" id="categoria" name="categoria"
-                   class="form-control" maxlength="100"
-                   placeholder="Es. Abbigliamento">
+            <label for="descrizione" class="form-label">Descrizione (facoltativa)</label>
+            <textarea id="descrizione" name="descrizione" class="form-control" rows="2"></textarea>
         </div>
 
-        <div class="mb-3">
-            <label for="descrizione" class="form-label">
-                Descrizione (facoltativa)
-            </label>
-            <textarea id="descrizione" name="descrizione"
-                      class="form-control" maxlength="250"
-                      rows="2"></textarea>
-        </div>
-
-        <button type="submit" class="btn btn-primary">
-            Aggiungi alla checklist
-        </button>
+        <button type="submit" class="btn btn-primary">Aggiungi alla checklist</button>
     </form>
 
-    <a href="{{ url_for('viaggio', id_viaggio=viaggio['id']) }}"
-       class="btn btn-outline-secondary mt-3">
-        Torna al viaggio
-    </a>
-
+    <a href="{{ url_for('viaggio', id_viaggio=viaggio['id']) }}" class="btn btn-outline-secondary mt-3">Torna al viaggio</a>
 </div>
 {% endblock %}

@@ -1,7 +1,5 @@
 import os
 from dotenv import load_dotenv
-
-load_dotenv()
 from flask import (
     Flask, render_template, request, redirect, 
     url_for, flash, session
@@ -9,6 +7,9 @@ from flask import (
 import mysql.connector
 from mysql.connector import Error
 from werkzeug.security import generate_password_hash, check_password_hash
+import secrets
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
@@ -63,6 +64,12 @@ def login():
                 session["id_utente"]=id_utente
                 session["username"]=username
                 flash("Accesso effettuato correttamente.", "success")
+                
+                #Controlla se c'era un invito in sospeso
+                if "pending_invitation" in session:
+                    token_in_sospeso = session.pop("pending_invitation")
+                    return redirect(url_for("unisciti_viaggio", token=token_in_sospeso))
+                
                 return redirect(url_for("menu"))
             else:
                 flash("Email o password non corretti.", "error")
@@ -107,12 +114,26 @@ def registrazione():
             VALUES (%s, %s, %s)
             """
             cursor.execute(query, (username, email, hashed_password))
+            
+            # Eseguiamo il login automatico del nuovo utente
+            id_nuovo_utente = cursor.lastrowid
+            session["id_utente"] = id_nuovo_utente
+            session["username"] = username
+            
             connessione.commit()
-            flash("Utente salvato correttamente.", "success")
-            return redirect(url_for("home"))
+            flash("Benvenuto su TripCrew! Registrazione completata.", "success")
+            
+            # Controlliamo se è arrivato da un link di invito
+            if "pending_invitation" in session:
+                token_in_sospeso = session.pop("pending_invitation")
+                return redirect(url_for("unisciti_viaggio", token=token_in_sospeso))
+                
+            # Se non ha inviti, va al normale menu
+            return redirect(url_for("menu"))
+        
         except mysql.connector.Error as errore_db:
             connessione.rollback()
-            flash("Impossibile salvare i dati.", "error")
+            flash("Impossibile salvare i dati o email già in uso.", "error")
         finally:
             if cursor is not None:
                 cursor.close()
@@ -217,15 +238,22 @@ def create_trip():
             VALUES (%s, %s)
             """
             cursor.execute(query_partecipante, (id_viaggio, id_creatore))
-
-            cursor.execute(
-                """
-                INSERT INTO attrezzatura(nome, categoria, viaggio_id)
-                SELECT nome, categoria, %s
+            
+            # 1. Inserisce l'attrezzatura DI GRUPPO (condiviso = 1)
+            cursor.execute("""
+                INSERT INTO attrezzatura(nome, categoria, viaggio_id, condiviso)
+                SELECT nome, categoria, %s, 1
                 FROM modelli_attrezzatura 
-                WHERE tipo_viaggio_id =%s
-                """, (id_viaggio, tipo_viaggio_id)
-            )
+                WHERE tipo_viaggio_id = %s AND condiviso = 1
+            """, (id_viaggio, tipo_viaggio_id))
+            
+            # 2. Inserisce l'attrezzatura PERSONALE (condiviso = 0) assegnandola subito al creatore
+            cursor.execute("""
+                INSERT INTO attrezzatura(nome, categoria, viaggio_id, condiviso, utente_id)
+                SELECT nome, categoria, %s, 0, %s
+                FROM modelli_attrezzatura 
+                WHERE tipo_viaggio_id = %s AND condiviso = 0
+            """, (id_viaggio, id_creatore, tipo_viaggio_id))
             
             connessione.commit()
             flash("Viaggio aggiunto correttamente.", "success")
@@ -329,6 +357,127 @@ def elimina_viaggio(id_viaggio):
             cursor.close()
         connessione.close()
 
+@app.route("/viaggio/<int:id_viaggio>/modifica", methods=["GET", "POST"])
+def modifica_viaggio(id_viaggio):
+    if "id_utente" not in session:
+        return redirect(url_for("login"))
+    
+    id_utente = session["id_utente"]
+    connessione = tentativo_accesso()
+    
+    if connessione is None:
+        flash("Errore di connessione al database.", "error")
+        return redirect(url_for("menu"))
+
+    cursor = None
+    try:
+        cursor = connessione.cursor(dictionary=True)
+        
+        cursor.execute(
+            """
+            SELECT v.id, v.nome, v.destinazione, v.data_inizio, v.data_fine, v.budget_persona, v.creatore_id, v.tipo_viaggio_id, t.nome AS tipo_viaggio 
+            FROM viaggi v 
+            JOIN tipologie_viaggio t ON t.id = v.tipo_viaggio_id
+            WHERE v.id = %s AND v.creatore_id = %s
+            """,
+            (id_viaggio, id_utente)
+        )
+        viaggio = cursor.fetchone()
+        
+        if viaggio is None:
+            flash("Viaggio non trovato o non hai i permessi per modificarlo.", "error")
+            return redirect(url_for("menu"))
+
+        vecchio_tipo_id = viaggio["tipo_viaggio_id"]
+
+        if request.method == "POST":
+            nome_viaggio = request.form.get("nome_viaggio", "").strip()
+            destinazione = request.form.get("destinazione", "").strip()
+            data_inizio = request.form.get("data_inizio", "").strip()
+            data_fine = request.form.get("data_fine", "").strip()
+            budget = request.form.get("budget", "").strip()
+            tipo_viaggio = request.form.get("tipo_viaggio", "").strip()
+
+            if not nome_viaggio or not destinazione or not data_inizio or not data_fine or not budget or not tipo_viaggio:
+                flash("Riempi tutti i campi.", "error")
+                return render_template("edit_trip.html", username=session["username"], viaggio=viaggio)
+
+            if data_fine < data_inizio:
+                flash("La data di fine deve essere successiva alla data di inizio.", "error")
+                return render_template("edit_trip.html", username=session["username"], viaggio=viaggio)
+
+            try:
+                budget = float(budget)
+                if budget < 0:
+                    flash("Il budget non può essere negativo.", "error")
+                    return render_template("edit_trip.html", username=session["username"], viaggio=viaggio)
+            except ValueError:
+                flash("Inserisci un budget valido.", "error")
+                return render_template("edit_trip.html", username=session["username"], viaggio=viaggio)
+
+            # Ricava il nuovo tipo_viaggio_id dalla tabella tipologie_viaggio
+            cursor.execute("SELECT id FROM tipologie_viaggio WHERE nome = %s", (tipo_viaggio,))
+            risultato = cursor.fetchone()
+            if risultato is None:
+                flash("La tipologia di viaggio non è valida.", "error")
+                return render_template("edit_trip.html", username=session["username"], viaggio=viaggio)
+            
+            tipo_viaggio_id = risultato["id"]
+
+            query = """
+            UPDATE viaggi 
+            SET nome = %s, destinazione = %s, data_inizio = %s, data_fine = %s, 
+                budget_persona = %s, tipo_viaggio = %s, tipo_viaggio_id = %s
+            WHERE id = %s AND creatore_id = %s
+            """
+            cursor.execute(query, (nome_viaggio, destinazione, data_inizio, data_fine, budget, tipo_viaggio, tipo_viaggio_id, id_viaggio, id_utente))
+
+            if vecchio_tipo_id != tipo_viaggio_id:
+                # Rimuove la vecchia attrezzatura associata al viaggio
+                cursor.execute("DELETE FROM attrezzatura WHERE viaggio_id = %s", (id_viaggio,))
+                
+                # 3A. Inserisce la nuova attrezzatura DI GRUPPO
+                cursor.execute("""
+                    INSERT INTO attrezzatura (nome, categoria, viaggio_id, condiviso)
+                    SELECT nome, categoria, %s, 1
+                    FROM modelli_attrezzatura 
+                    WHERE tipo_viaggio_id = %s AND condiviso = 1
+                """, (id_viaggio, tipo_viaggio_id))
+
+                # 3B. Recupera tutti gli utenti attualmente iscritti al viaggio (creatore + partecipanti)
+                cursor.execute("""
+                    SELECT creatore_id AS u_id FROM viaggi WHERE id = %s
+                    UNION 
+                    SELECT utente_id AS u_id FROM partecipanti WHERE viaggio_id = %s
+                """, (id_viaggio, id_viaggio))
+                utenti_attuali = cursor.fetchall()
+
+                # 3C. Crea l'attrezzatura PERSONALE per OGNUNO di loro
+                for u in utenti_attuali:
+                    cursor.execute("""
+                        INSERT INTO attrezzatura (nome, categoria, viaggio_id, condiviso, utente_id)
+                        SELECT nome, categoria, %s, 0, %s
+                        FROM modelli_attrezzatura 
+                        WHERE tipo_viaggio_id = %s AND condiviso = 0
+                    """, (id_viaggio, u['u_id'], tipo_viaggio_id))
+
+            connessione.commit()
+            
+            flash("Viaggio modificato correttamente.", "success")
+            return redirect(url_for("viaggio", id_viaggio=id_viaggio))
+
+        return render_template("edit_trip.html", username=session["username"], viaggio=viaggio)
+
+    except mysql.connector.Error as errore_db:
+        connessione.rollback()
+        print(f"Errore MySQL: {errore_db}")
+        flash("Impossibile aggiornare i dati del viaggio.", "error")
+        return redirect(url_for("viaggio", id_viaggio=id_viaggio))
+    finally:
+        if cursor is not None:
+            cursor.close()
+        connessione.close()
+
 
 @app.route("/viaggio/<int:id_viaggio>/attrezzatura", methods=["GET","POST"])
 def checklist_attrezzatura(id_viaggio):
@@ -344,20 +493,13 @@ def checklist_attrezzatura(id_viaggio):
     cursor = None
     try:
         cursor = connessione.cursor(dictionary=True)
-        #verifica che l'utente possa accedere al viaggio
+        # Verifica accesso al viaggio
         cursor.execute("""
         SELECT v.id, v.nome FROM viaggi v
-        WHERE v.id = %s
-            AND (
-            v.creatore_id = %s 
-            OR EXISTS (
-                SELECT 1 FROM partecipanti p
-                WHERE p.viaggio_id = v.id
-                    AND p.utente_id = %s    
-            )
-        )
+        WHERE v.id = %s AND (v.creatore_id = %s OR EXISTS (
+                SELECT 1 FROM partecipanti p WHERE p.viaggio_id = v.id AND p.utente_id = %s
+            ))
         """, (id_viaggio, id_utente, id_utente))
-        
         viaggio = cursor.fetchone()
 
         if viaggio is None:
@@ -366,95 +508,106 @@ def checklist_attrezzatura(id_viaggio):
         
         if request.method == "POST":
             azione = request.form.get("azione")
-            #segna un oggetto come preparato o da preparare
+            item_id = request.form.get("item_id")
+            
+            # 1. Segna come preparato/da preparare
             if azione == "toggle":
-                item_id = request.form.get("item_id")
                 preparato = request.form.get("preparato")
-
                 if item_id and preparato in ("0", "1"):
-                    cursor.execute(
-                        """
-                        UPDATE attrezzatura
-                        SET preparato = %s
-                        WHERE id = %s AND viaggio_id = %s
-                        """,
-                        (int(preparato), item_id, id_viaggio)
-                    )
+                    cursor.execute("UPDATE attrezzatura SET preparato = %s WHERE id = %s AND viaggio_id = %s", (int(preparato), item_id, id_viaggio))
                     connessione.commit()
-                else:
-                    flash("Dati dell'oggetti non validi.", "error")
-            elif azione=="aggiungi":
+            
+            # 2. Assegna a se stessi ("Lo porto io")
+            elif azione == "assegna":
+                if item_id:
+                    cursor.execute("UPDATE attrezzatura SET utente_id = %s WHERE id = %s AND viaggio_id = %s", (id_utente, item_id, id_viaggio))
+                    connessione.commit()
+                    flash("Hai preso in carico questo oggetto!", "success")
+            
+            # 3. Rimuovi assegnazione ("Non posso portarlo")
+            elif azione == "rimuovi_assegnazione":
+                if item_id:
+                    cursor.execute("UPDATE attrezzatura SET utente_id = NULL, preparato = 0 WHERE id = %s AND viaggio_id = %s", (item_id, id_viaggio))
+                    connessione.commit()
+            
+            # 4. Elimina oggetto
+            elif azione == "elimina":
+                if item_id:
+                    cursor.execute("DELETE FROM attrezzatura WHERE id = %s AND viaggio_id = %s", (item_id, id_viaggio))
+                    connessione.commit()
+                    flash("Oggetto eliminato.", "success")
+                    
+            # 5. Aggiungi nuovo oggetto
+            elif azione == "aggiungi":
                 nome = request.form.get("nome", "").strip()
-                categoria = request.form.get("categoria", "").strip()
+                categoria = request.form.get("categoria", "Altro").strip()
                 descrizione = request.form.get("descrizione", "").strip()
+                tipo_oggetto = request.form.get("tipo_oggetto", "condiviso")
 
-                if not nome:
-                    flash("Inserisci il nome dell'oggetto.", "error")
-                else:
-                    if not categoria:
-                        categoria="Altro"
-                    cursor.execute(
-                        """
-                        INSERT INTO attrezzatura (nome, categoria, descrizione, viaggio_id)
-                        VALUES (%s, %s, %s, %s)
-                        """,
-                        (nome, categoria, descrizione or None, id_viaggio)
-                    )
+                if nome:
+                    if tipo_oggetto == "condiviso":
+                        # Oggetto di gruppo: ne creiamo UNO solo
+                        cursor.execute("""
+                            INSERT INTO attrezzatura (nome, categoria, descrizione, viaggio_id, condiviso)
+                            VALUES (%s, %s, %s, %s, 1)
+                        """, (nome, categoria, descrizione or None, id_viaggio))
+                    else:
+                        # Oggetto personale: Ne creiamo UNO PER OGNI PARTECIPANTE + IL CREATORE
+                        cursor.execute("""
+                            SELECT creatore_id AS u_id FROM viaggi WHERE id = %s
+                            UNION SELECT utente_id AS u_id FROM partecipanti WHERE viaggio_id = %s
+                        """, (id_viaggio, id_viaggio))
+                        utenti_viaggio = cursor.fetchall()
+                        
+                        for u in utenti_viaggio:
+                            cursor.execute("""
+                                INSERT INTO attrezzatura (nome, categoria, descrizione, viaggio_id, condiviso, utente_id)
+                                VALUES (%s, %s, %s, %s, 0, %s)
+                            """, (nome, categoria, descrizione or None, id_viaggio, u['u_id']))
+                    
                     connessione.commit()
                     flash("Oggetto aggiunto alla checklist.", "success")
-            #Elimina un oggetto dalla checklist
-            elif azione== "elimina":
-                item_id=request.form.get("item_id")
-
-                if item_id and item_id.isdigit():
-                    cursor.execute(
-                        """
-                        DELETE FROM attrezzatura
-                        WHERE id = %s AND viaggio_id=%s
-                        """,
-                        (int(item_id), id_viaggio)
-                    )
-                    connessione.commit()
-                    flash("Oggetto eliminato dalla checklist.", "success")
-                else:
-                    flash("Oggetto non valido.", "error")
             return redirect(url_for("checklist_attrezzatura", id_viaggio=id_viaggio))
         
-        #recupera gli oggetti di questo viaggio
-        cursor.execute(
-            """
+        # --- RECUPERO DATI PER IL TEMPLATE ---
+        # A. Oggetti di GRUPPO
+        cursor.execute("""
+            SELECT a.id, a.nome, a.categoria, a.descrizione, a.preparato, a.utente_id, u.username AS assegnato_a
+            FROM attrezzatura a
+            LEFT JOIN utenti u ON a.utente_id = u.id
+            WHERE a.viaggio_id = %s AND a.condiviso = 1
+            ORDER BY a.categoria, a.nome
+        """, (id_viaggio,))
+        oggetti_gruppo = cursor.fetchall()
+
+        # B. Oggetti PERSONALI (Solo quelli dell'utente loggato)
+        cursor.execute("""
             SELECT id, nome, categoria, descrizione, preparato
             FROM attrezzatura
-            WHERE viaggio_id = %s
+            WHERE viaggio_id = %s AND condiviso = 0 AND utente_id = %s
             ORDER BY categoria, nome
-            """,
-            (id_viaggio,)
-        )
+        """, (id_viaggio, id_utente))
+        oggetti_personali = cursor.fetchall()
 
-        oggetti = cursor.fetchall()
-
-        totale = len(oggetti)
-        preparati = sum(bool(item["preparato"]) for item in oggetti)
+        totale = len(oggetti_gruppo) + len(oggetti_personali)
+        preparati = sum(1 for item in oggetti_gruppo if item["preparato"]) + sum(1 for item in oggetti_personali if item["preparato"])
 
         return render_template(
             "attrezzatura.html",
             username=username,
             viaggio=viaggio,
-            oggetti=oggetti,
+            oggetti_gruppo=oggetti_gruppo,
+            oggetti_personali=oggetti_personali,
             totale=totale,
-            preparati=preparati
+            preparati=preparati,
+            id_utente=id_utente
         )
     except mysql.connector.Error as errore_db:
-        connessione.rollback()
         print(f"Errore MySQL: {errore_db}")
-        print(f"Codice errore: {errore_db.errno}")
-        print(f"SQLSTATE: {errore_db.sqlstate}")
-
         flash("Si è verificato un errore nella checklist.", "error")
         return redirect(url_for("menu"))
     finally:
-        if cursor is not None:
-            cursor.close()
+        if cursor is not None: cursor.close()
         connessione.close()
 
 
@@ -473,18 +626,13 @@ def lista_partecipanti(id_viaggio):
     cursor = None
     try:
         cursor = connessione.cursor(dictionary=True)
-        #verifica che l'utente possa accedere al viaggio
+        # Verifica che l'utente possa accedere al viaggio e recupera il token
         cursor.execute("""
-        SELECT v.id, v.nome
+        SELECT v.id, v.nome, v.token_invito
         FROM viaggi v
-        WHERE v.id = %s
-            AND (
-                v.creatore_id = %s
-                OR EXISTS (
-                    SELECT 1
-                    FROM partecipanti p
-                    WHERE p.viaggio_id = v.id
-                        AND p.utente_id = %s
+        WHERE v.id = %s AND (
+                v.creatore_id = %s OR EXISTS (
+                    SELECT 1 FROM partecipanti p WHERE p.viaggio_id = v.id AND p.utente_id = %s
                 )
             )
         """, (id_viaggio, id_utente, id_utente))
@@ -494,6 +642,13 @@ def lista_partecipanti(id_viaggio):
         if viaggio is None:
             flash("Viaggio non trovato o non accessibile.", "error")
             return redirect(url_for("menu"))
+        
+        # GENERAZIONE PIGRA DEL LINK: Se il viaggio non ha ancora un token, creiamolo ora!
+        if not viaggio.get("token_invito"):
+            nuovo_token = secrets.token_urlsafe(16) # Genera una stringa casuale sicura
+            cursor.execute("UPDATE viaggi SET token_invito = %s WHERE id = %s", (nuovo_token, id_viaggio))
+            connessione.commit()
+            viaggio["token_invito"] = nuovo_token
         
         if request.method == "POST":
             azione = request.form.get("azione")
@@ -534,6 +689,16 @@ def lista_partecipanti(id_viaggio):
                             """,
                             (utente_id, id_viaggio)
                         )
+
+                        # Dopo aver aggiunto il partecipante, copiamogli gli oggetti personali!
+                        cursor.execute("SELECT DISTINCT nome, categoria, descrizione FROM attrezzatura WHERE viaggio_id = %s AND condiviso = 0", (id_viaggio,))
+                        oggetti_personali_esistenti = cursor.fetchall()
+                        for o in oggetti_personali_esistenti:
+                            cursor.execute("""
+                                INSERT INTO attrezzatura (nome, categoria, descrizione, viaggio_id, condiviso, utente_id)
+                                VALUES (%s, %s, %s, %s, 0, %s)
+                            """, (o['nome'], o['categoria'], o['descrizione'], id_viaggio, utente_id))
+                        
                         connessione.commit()
                         flash("Partecipante aggiunto al viaggio.", "success")
             #Elimina un partecipante dalla 
@@ -800,6 +965,167 @@ def chat_viaggio(id_viaggio):
         if cursor: cursor.close()
         connessione.close()
 
+
+@app.route("/viaggio/<int:id_viaggio>/itinerario", methods=["GET", "POST"])
+def itinerario_viaggio(id_viaggio):
+    if "id_utente" not in session:
+        return redirect(url_for("login"))
+    
+    id_utente = session["id_utente"]
+    username = session["username"]
+    connessione = tentativo_accesso()
+    
+    if connessione is None:
+        flash("Errore di connessione al database.", "error")
+        return redirect(url_for("menu"))
+
+    cursor = None
+    try:
+        cursor = connessione.cursor(dictionary=True)
+        
+        cursor.execute("""
+            SELECT v.id, v.nome, v.data_inizio, v.data_fine 
+            FROM viaggi v
+            WHERE v.id = %s AND (
+                v.creatore_id = %s OR EXISTS (
+                    SELECT 1 FROM partecipanti p WHERE p.viaggio_id = v.id AND p.utente_id = %s
+                )
+            )
+        """, (id_viaggio, id_utente, id_utente))
+        viaggio = cursor.fetchone()
+
+        if not viaggio:
+            flash("Viaggio non trovato o non accessibile.", "error")
+            return redirect(url_for("menu"))
+
+        if request.method == "POST":
+            azione = request.form.get("azione")
+            
+            if azione == "aggiungi":
+                nome = request.form.get("nome", "").strip()
+                descrizione = request.form.get("descrizione", "").strip()
+                data = request.form.get("data", "").strip()
+                ora = request.form.get("ora", "").strip()
+                luogo = request.form.get("luogo", "").strip()
+                costo = request.form.get("costo", "0.00").strip()
+                
+                if not nome or not data:
+                    flash("I campi Nome e Data sono obbligatori.", "error")
+                else:
+                    # Se i campi non sono riempiti impostiamo NULL (None in Python) o zero per il costo
+                    ora = ora if ora else None
+                    luogo = luogo if luogo else None
+                    costo = float(costo) if costo else 0.00
+                    
+                    cursor.execute("""
+                        INSERT INTO attivita (viaggio_id, nome, descrizione, data, ora, luogo, COSTO)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (id_viaggio, nome, descrizione, data, ora, luogo, costo))
+                    connessione.commit()
+                    flash("Attività aggiunta all'itinerario.", "success")
+                    
+            elif azione == "elimina":
+                attivita_id = request.form.get("attivita_id")
+                if attivita_id:
+                    cursor.execute("DELETE FROM attivita WHERE id = %s AND viaggio_id = %s", (attivita_id, id_viaggio))
+                    connessione.commit()
+                    flash("Attività eliminata.", "success")
+
+            return redirect(url_for("itinerario_viaggio", id_viaggio=id_viaggio))
+
+        # 3. Recupera e raggruppa le attività
+        cursor.execute("""
+            SELECT id, nome, descrizione, data, TIME_FORMAT(ora, '%H:%i') as ora_formattata, luogo, COSTO
+            FROM attivita
+            WHERE viaggio_id = %s
+            ORDER BY data ASC, ora ASC
+        """, (id_viaggio,))
+        attivita_db = cursor.fetchall()
+        
+        # Raggruppiamo le attività per data tramite un dizionario
+        itinerario = {}
+        for att in attivita_db:
+            data_str = att['data'].strftime('%d/%m/%Y')
+            if data_str not in itinerario:
+                itinerario[data_str] = []
+            itinerario[data_str].append(att)
+
+        return render_template(
+            "itinerario.html", 
+            viaggio=viaggio, 
+            itinerario=itinerario
+        )
+
+    except mysql.connector.Error as errore_db:
+        print(f"Errore MySQL: {errore_db}")
+        flash("Si è verificato un errore nel caricamento dell'itinerario.", "error")
+        return redirect(url_for("menu"))
+    finally:
+        if cursor: cursor.close()
+        connessione.close()
+
+
+
+@app.route("/join/<token>")
+def unisciti_viaggio(token):
+    # Se l'utente non è loggato, salviamo il token in sessione e lo mandiamo al login
+    if "id_utente" not in session:
+        session["pending_invitation"] = token
+        flash("Accedi o registrati per unirti al viaggio tramite l'invito.", "info")
+        return redirect(url_for("home"))
+
+    id_utente = session["id_utente"]
+    connessione = tentativo_accesso()
+    if connessione is None:
+        return redirect(url_for("menu"))
+
+    cursor = None
+    try:
+        cursor = connessione.cursor(dictionary=True)
+        
+        # 1. Trova il viaggio associato a questo token
+        cursor.execute("SELECT id, nome, creatore_id, tipo_viaggio_id FROM viaggi WHERE token_invito = %s", (token,))
+        viaggio = cursor.fetchone()
+
+        if not viaggio:
+            flash("Il link di invito non è valido o è scaduto.", "error")
+            return redirect(url_for("menu"))
+
+        id_viaggio = viaggio["id"]
+
+        # 2. Controlla se è già il creatore
+        if viaggio["creatore_id"] == id_utente:
+            return redirect(url_for("viaggio", id_viaggio=id_viaggio))
+
+        # 3. Controlla se è già un partecipante
+        cursor.execute("SELECT 1 FROM partecipanti WHERE viaggio_id = %s AND utente_id = %s", (id_viaggio, id_utente))
+        if cursor.fetchone():
+            flash("Fai già parte di questo viaggio!", "info")
+            return redirect(url_for("viaggio", id_viaggio=id_viaggio))
+
+        # 4. Aggiungi l'utente ai partecipanti
+        cursor.execute("INSERT INTO partecipanti (viaggio_id, utente_id) VALUES (%s, %s)", (id_viaggio, id_utente))
+
+        # 5. Genera la sua attrezzatura PERSONALE basata sulla tipologia del viaggio
+        cursor.execute("""
+            INSERT INTO attrezzatura (nome, categoria, viaggio_id, condiviso, utente_id)
+            SELECT nome, categoria, %s, 0, %s
+            FROM modelli_attrezzatura 
+            WHERE tipo_viaggio_id = %s AND condiviso = 0
+        """, (id_viaggio, id_utente, viaggio["tipo_viaggio_id"]))
+
+        connessione.commit()
+        flash(f"Fantastico! Ti sei unito al viaggio '{viaggio['nome']}'.", "success")
+        return redirect(url_for("viaggio", id_viaggio=id_viaggio))
+
+    except mysql.connector.Error as errore_db:
+        connessione.rollback()
+        print(f"Errore MySQL: {errore_db}")
+        flash("Si è verificato un errore durante l'iscrizione al viaggio.", "error")
+        return redirect(url_for("menu"))
+    finally:
+        if cursor: cursor.close()
+        connessione.close()
 
 
 

@@ -6,6 +6,42 @@
 
     <h1>Partecipanti</h1>
     <h2>{{ viaggio["nome"] }}</h2>
+    <!-- SEZIONE LINK DI INVITO -->
+    <div class="card card-highlight mb-4 mt-3">
+        <div class="card-body">
+            <h3>🔗 Invita tramite Link</h3>
+            <p class="text-muted mb-2">Invia questo link ai tuoi amici. Cliccandolo verranno aggiunti al viaggio!</p>
+            
+            <div class="input-group">
+                <!-- request.host_url fornisce in automatico l'indirizzo base (es. http://127.0.0.1:5000/) -->
+                <input type="text" id="inviteLink" class="form-control bg-light" 
+                       value="{{ request.host_url }}join/{{ viaggio['token_invito'] }}" readonly>
+                <button class="btn btn-primary" onclick="copiaLink()">Copia Link</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPT PER LA COPIA NEGLI APPUNTI -->
+    <script>
+    function copiaLink() {
+        var copyText = document.getElementById("inviteLink");
+        copyText.select();
+        copyText.setSelectionRange(0, 99999); /* Per dispositivi mobile */
+        
+        navigator.clipboard.writeText(copyText.value).then(function() {
+            // Cambia temporaneamente il testo del bottone per dare un feedback visivo
+            var btn = event.target;
+            var testoOriginale = btn.innerText;
+            btn.innerText = "Copiato! ✓";
+            btn.classList.replace("btn-primary", "btn-success");
+            
+            setTimeout(function() {
+                btn.innerText = testoOriginale;
+                btn.classList.replace("btn-success", "btn-primary");
+            }, 2000);
+        });
+    }
+    </script>
 
     <h3>Compagni di viaggio:</h3>
 

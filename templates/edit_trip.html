@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}
+  Modifica Viaggio - TripCrew
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+  <h1>Modifica viaggio</h1>
+  <h2>{{ viaggio["nome"] }}</h2>
+
+  <form method="post">
+      <label>Nome viaggio</label><br>
+      <input type="text" name="nome_viaggio" value="{{ viaggio['nome'] }}" required><br><br>
+
+      <label>Destinazione</label><br>
+      <input type="text" name="destinazione" value="{{ viaggio['destinazione'] }}" required><br><br>
+
+      <label>Data inizio</label><br>
+      <input type="date" name="data_inizio" value="{{ viaggio['data_inizio'] }}" required><br><br>
+
+      <label>Data fine</label><br>
+      <input type="date" name="data_fine" value="{{ viaggio['data_fine'] }}" required><br><br>
+
+      <label>Budget per persona</label><br>
+      <input type="number" step="0.01"  min="0" name="budget" value="{{ viaggio['budget_persona'] }}" required><br><br>
+
+      <label for="tipo_viaggio">Tipologia di viaggio:</label>
+      <select name="tipo_viaggio" id="tipo_viaggio" required>
+        <option value="">Seleziona una tipologia</option>
+        <option value="campeggio" {% if viaggio['tipo_viaggio'] == 'campeggio' %}selected{% endif %}>Campeggio</option>
+        <option value="trekking" {% if viaggio['tipo_viaggio'] == 'trekking' %}selected{% endif %}>Trekking di più giorni</option>
+        <option value="escursione" {% if viaggio['tipo_viaggio'] == 'escursione' %}selected{% endif %}>Escursione in giornata</option>
+        <option value="hotel" {% if viaggio['tipo_viaggio'] == 'hotel' %}selected{% endif %}>Hotel</option>
+        <option value="altro" {% if viaggio['tipo_viaggio'] == 'altro' %}selected{% endif %}>Altro</option>
+      </select> 
+
+      <button type="submit">Salva Modifiche</button>
+  </form>
+
+    <a href="{{ url_for('viaggio', id_viaggio=viaggio['id']) }}"
+       class="btn btn-outline-secondary mt-3">
+        Annulla
+    </a>
+</div>
+{% endblock %}
