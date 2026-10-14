@@ -133,7 +133,7 @@ def registrazione():
         
         except mysql.connector.Error as errore_db:
             connessione.rollback()
-            flash("Impossibile salvare i dati o email già in uso.", "error")
+            flash("Impossibile salvare i dati: username o email già in uso.", "error")
         finally:
             if cursor is not None:
                 cursor.close()
