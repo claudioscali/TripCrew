@@ -1160,7 +1160,16 @@ def unisciti_viaggio(token):
         if cursor: cursor.close()
         connessione.close()
 
-
+@app.route('/healthz')
+def health_check():
+    connessione = tentativo_accesso()
+    if connessione:
+        cursor = connessione.cursor()
+        cursor.execute("SELECT 1;")
+        cursor.close()
+        connessione.close()
+        return "OK", 200
+    return "DB Error", 500
 
 if __name__=="__main__":
     app.run(debug=True)
