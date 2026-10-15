@@ -7,19 +7,56 @@
 {% block content %}
 <div class="container mt-4 mb-5 text-center">
 
-
   <h1>Registrazione</h1>
   <form method="post">
       <label>Nome utente</label><br>
-      <input type="text" name="username" required><br><br>
+      <!-- Aggiunto id="username" qui -->
+      <input type="text" id="username" name="username" value="{{ username_inserito | default('') }}" required>
+      <span id="username-feedback" style="color: red; display: none;">Username già in uso!</span>
+
+      <script>
+      document.getElementById('username').addEventListener('input', function() {
+          let username = this.value;
+          if (username.length > 2) { 
+              fetch('/check_username', {
+                  method: 'POST',
+                  headers: {
+                      'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ username: username })
+              })
+              .then(response => response.json())
+              .then(data => {
+                  const feedback = document.getElementById('username-feedback');
+                  const btnRegister = document.getElementById('btn-register'); // Seleziona il bottone
+
+                  if (data.exists) {
+                      feedback.style.display = 'block';
+                      btnRegister.disabled = true; // Disabilita il bottone
+                  } else {
+                      feedback.style.display = 'none';
+                      btnRegister.disabled = false; // Riabilita il bottone
+                  }
+              })
+              .catch(error => console.error('Errore:', error));
+          } else {
+              // Nascondi il messaggio se l'utente cancella e torna sotto i 3 caratteri
+              document.getElementById('username-feedback').style.display = 'none';
+              document.getElementById('btn-register').disabled = false;
+          }
+      });
+      </script>
+
+      <br><br>
 
       <label>Email</label><br>
-      <input type="email" name="email" required><br><br>
+      <input type="email" name="email" value="{{ email_inserita | default('') }}" required><br><br>
 
       <label>Password</label><br>
       <input type="password" name="password" required><br><br>
 
-      <button type="submit">Registrati</button>
+      <!-- Aggiunto id="btn-register" qui -->
+      <button type="submit" id="btn-register">Registrati</button>
   </form>
 </div>
 

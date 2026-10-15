@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from flask import (
     Flask, render_template, request, redirect, 
-    url_for, flash, session
+    url_for, flash, session, jsonify
 )
 import mysql.connector
 from mysql.connector import Error
@@ -134,11 +134,44 @@ def registrazione():
         except mysql.connector.Error as errore_db:
             connessione.rollback()
             flash("Impossibile salvare i dati: username o email già in uso.", "error")
+            return render_template('registrazione.html', 
+                       username_inserito=request.form.get('username'),
+                       email_inserita=request.form.get('email'))
         finally:
             if cursor is not None:
                 cursor.close()
             connessione.close()
     return render_template("registrazione.html")
+
+
+@app.route('/check_username', methods=['POST'])
+def check_username():
+    data = request.get_json()
+    username = data.get('username')
+    
+    connessione = tentativo_accesso()
+    if connessione is None:
+        # Se cade la connessione, restituiamo false per non bloccare l'interfaccia inutilmente
+        return jsonify({"exists": False}) 
+        
+    cursor = None
+    try:
+        cursor = connessione.cursor(dictionary=True)
+        # Corretto il nome della tabella in "utenti" come nel resto del tuo codice
+        cursor.execute("SELECT username FROM utenti WHERE username = %s", (username,))
+        user = cursor.fetchone()
+        
+        if user:
+            return jsonify({"exists": True})
+        return jsonify({"exists": False})
+        
+    except mysql.connector.Error as errore_db:
+        print(f"Errore controllo username: {errore_db}")
+        return jsonify({"exists": False})
+    finally:
+        if cursor is not None:
+            cursor.close()
+        connessione.close()
 
 @app.route("/menu", methods=["GET"])
 def menu():
