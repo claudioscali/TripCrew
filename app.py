@@ -8,6 +8,8 @@ import mysql.connector
 from mysql.connector import Error
 from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
+import requests
+from datetime import datetime
 
 load_dotenv()
 
@@ -1017,7 +1019,7 @@ def itinerario_viaggio(id_viaggio):
         cursor = connessione.cursor(dictionary=True)
         
         cursor.execute("""
-            SELECT v.id, v.nome, v.data_inizio, v.data_fine 
+            SELECT v.id, v.nome, v.destinazione, v.data_inizio, v.data_fine 
             FROM viaggi v
             WHERE v.id = %s AND (
                 v.creatore_id = %s OR EXISTS (
@@ -1159,6 +1161,35 @@ def unisciti_viaggio(token):
     finally:
         if cursor: cursor.close()
         connessione.close()
+
+
+@app.route("/api/meteo/<destinazione>")
+def get_meteo(destinazione):
+    if "id_utente" not in session:
+        return jsonify({"error": "Non autorizzato"}), 401
+
+    api_key = os.getenv("OPENWEATHER_API_KEY")
+    if not api_key:
+        return jsonify({"error": "API Key non configurata"}), 500
+    # URL per il meteo in tempo reale
+    url_now = f"https://api.openweathermap.org/data/2.5/weather?q={destinazione}&units=metric&lang=it&appid={api_key}"
+    # URL per le previsioni a 5 giorni (ogni 3 ore)
+    url_forecast = f"https://api.openweathermap.org/data/2.5/forecast?q={destinazione}&units=metric&lang=it&appid={api_key}"
+    
+    try:
+        res_now = requests.get(url_now, timeout=5).json()
+        res_forecast = requests.get(url_forecast, timeout=5).json()
+        
+        # Restituiamo entrambi i JSON uniti
+        return jsonify({
+            "cod": 200,
+            "corrente": res_now,
+            "previsioni": res_forecast
+        }), 200
+    except requests.RequestException as e:
+        print(f"Errore connessione meteo: {e}")
+        return jsonify({"error": "Impossibile recuperare i dati meteo", "cod": 500}), 500
+
 
 @app.route('/healthz')
 def health_check():

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block title %}
-  Menu - TripCrew
+  {{viaggio["nome"]}} - TripCrew
 {% endblock %}
 
 {% block content %}
@@ -17,6 +17,41 @@
   <p>Data di fine: {{ viaggio["data_fine"] }}</p>
 
   <p>Budget per persona: {{ viaggio["budget_persona"] }}</p>
+
+  <!-- ================= SEZIONE METEO ================= -->
+  <!-- <div id="meteo-container" class="card card-highlight mb-4 d-none">
+      <div class="card-body">
+          <h4 class="h5 mb-2">🌤️ Meteo a {{ viaggio["destinazione"] }}</h4>
+          <div id="meteo-dati" class="text-muted">Caricamento previsioni in corso...</div>
+      </div>
+  </div> -->
+  <!-- ================= SEZIONE METEO ================= -->
+  <!-- Aggiunto style="cursor: pointer" e gli attributi per aprire il modale -->
+  <div id="meteo-container" class="card card-highlight mb-4 d-none" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#meteoModal">
+      <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start">
+              <h4 class="h5 mb-2">🌤️ Meteo a {{ viaggio["destinazione"] }}</h4>
+              <small class="text-muted">Clicca per i prossimi 5 giorni ➔</small>
+          </div>
+          <div id="meteo-dati" class="text-muted">Caricamento previsioni in corso...</div>
+      </div>
+  </div>
+
+<!-- Modale Previsioni Bootstrap (Aggiornato coi colori dinamici) -->
+  <div class="modal fade" id="meteoModal" tabindex="-1" aria-labelledby="meteoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <!-- Aggiunto color: var(--ink) per renderlo leggibile in Dark Mode -->
+      <div class="modal-content" style="background-color: var(--surface); color: var(--ink); border: 1px solid var(--line);">
+        <div class="modal-header border-bottom" style="border-color: var(--line) !important;">
+          <h5 class="modal-title" id="meteoModalLabel">Previsioni 5 giorni - {{ viaggio["destinazione"] }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="meteo-forecast-body">
+          <!-- Le previsioni verranno iniettate qui dal JS -->
+        </div>
+      </div>
+    </div>
+  </div>
 
   <a href="{{ url_for('itinerario_viaggio', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">Itinerario e Attività</a>
   <br>
@@ -49,6 +84,110 @@
         Torna al menu
     </a>
 </div>
+
+<!-- Script per recuperare il meteo via Fetch -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // 1. FIX VELO SCURO E TASTO X: Spostiamo il modale fuori dal tag <main>
+    const meteoModal = document.getElementById("meteoModal");
+    document.body.appendChild(meteoModal);
+
+    const destinazione = encodeURIComponent("{{ viaggio['destinazione'] }}");
+    const container = document.getElementById("meteo-container");
+    const meteoDati = document.getElementById("meteo-dati");
+    const forecastBody = document.getElementById("meteo-forecast-body");
+
+    fetch(`/api/meteo/${destinazione}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.cod === 200 || data.cod === "200") {
+                const curr = data.corrente;
+                
+                // Raggruppiamo le previsioni per giorno (ci serve anche per la min/max di oggi)
+                const giorni = {};
+                data.previsioni.list.forEach(item => {
+                    const dataSoloGiorno = item.dt_txt.split(' ')[0];
+                    if(!giorni[dataSoloGiorno]) {
+                        giorni[dataSoloGiorno] = [];
+                    }
+                    giorni[dataSoloGiorno].push(item);
+                });
+
+               // 2. FIX MINIMA E MASSIMA: Calcoliamo quelle vere scansionando le previsioni di oggi
+                let tMin = curr.main.temp_min;
+                let tMax = curr.main.temp_max;
+                // Gestione fuso orario locale per evitare discrepanze con la data dell'API
+                const dataDiOggi = new Date(curr.dt * 1000).toISOString().split('T')[0]; 
+                
+                if (giorni[dataDiOggi]) {
+                    const temperatureOggi = giorni[dataDiOggi].map(r => r.main.temp);
+                    
+                    // Inseriamo nell'elenco anche la temperatura attuale per sicurezza
+                    temperatureOggi.push(curr.main.temp, curr.main.temp_min, curr.main.temp_max);
+                    
+                    tMin = Math.min(...temperatureOggi);
+                    tMax = Math.max(...temperatureOggi);
+                }
+
+                // POPOLA LA CARD CORRENTE
+                const descrizione = curr.weather[0].description;
+                const icona = curr.weather[0].icon;
+                const temp = Math.round(curr.main.temp);
+                const umidita = curr.main.humidity;
+                
+                meteoDati.innerHTML = `
+                    <div class="d-flex align-items-center mb-2">
+                        <img src="https://openweathermap.org/img/wn/${icona}.png" alt="icona meteo" class="me-2" style="width: 40px; height: 40px; background: rgba(0,0,0,0.1); border-radius: 50%;">
+                        <strong class="text-capitalize fs-5">${descrizione}</strong>
+                    </div>
+                    <p class="mb-1"><strong>Attualmente:</strong> ${temp}°C</p>
+                    <p class="mb-0"><strong>Oggi Min:</strong> ${Math.round(tMin)}°C | <strong>Max:</strong> ${Math.round(tMax)}°C</p>
+                    <small class="text-muted mt-2 d-block">Umidità: ${umidita}%</small>
+                `;
+                container.classList.remove("d-none");
+
+                // 3. POPOLA IL MODALE CON LE PREVISIONI A 5 GIORNI (Più dettagliate)
+                let htmlModale = '';
+                for (const [dataStr, rilevazioni] of Object.entries(giorni)) {
+                    // Prendi la rilevazione di mezzogiorno (o la prima disponibile)
+                    let meteoGiorno = rilevazioni.find(r => r.dt_txt.includes("12:00:00")) || rilevazioni[0];
+                    
+                    // Calcola la min e max di tutta la giornata
+                    const tempsGiorno = rilevazioni.map(r => r.main.temp);
+                    const minGiorno = Math.round(Math.min(...tempsGiorno));
+                    const maxGiorno = Math.round(Math.max(...tempsGiorno));
+
+                    let dataObj = new Date(dataStr);
+                    let dataFormattata = dataObj.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+
+                    htmlModale += `
+                        <div class="d-flex justify-content-between align-items-center p-2 mb-2 rounded" style="background-color: var(--surface-2); border: 1px solid var(--line);">
+                            <div class="text-capitalize fw-bold" style="width: 25%;">
+                                ${dataFormattata}
+                            </div>
+                            <div class="d-flex align-items-center" style="width: 45%;">
+                                <img src="https://openweathermap.org/img/wn/${meteoGiorno.weather[0].icon}.png" alt="icona" style="width: 35px;">
+                                <div class="d-flex flex-column ms-1">
+                                    <span class="text-capitalize" style="font-size: 0.85em; line-height: 1.1;">${meteoGiorno.weather[0].description}</span>
+                                    <span class="text-muted" style="font-size: 0.75em;">💧 Umidità: ${meteoGiorno.main.humidity}%</span>
+                                </div>
+                            </div>
+                            <div class="text-end" style="width: 30%; font-size: 0.9em;">
+                                <span class="fw-bold" style="color: #ef5350;">${maxGiorno}°</span> / 
+                                <span class="fw-bold" style="color: #64b5f6;">${minGiorno}°</span>
+                            </div>
+                        </div>
+                    `;
+                }
+                forecastBody.innerHTML = htmlModale;
+
+            } else {
+                console.warn("Meteo non disponibile.");
+            }
+        })
+        .catch(err => console.error("Errore recupero meteo:", err));
+});
+</script>
 
 {% endblock %}
 

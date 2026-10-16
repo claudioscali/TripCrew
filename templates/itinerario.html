@@ -12,21 +12,30 @@
 
     {% if itinerario %}
         {% for data, attivita_giorno in itinerario.items() %}
-            <div class="card mb-4 shadow-sm">
+            {% set iso_date = attivita_giorno[0]['data'] %}
+
+            <div class="card mb-4 shadow-sm day-card" data-date="{{ iso_date }}">
                 
-                <div class="card-header bg-primary text-white py-2">
+                <div class="card-header bg-primary text-white py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <h4 class="mb-0 fs-5 text-white">🗓️ Giorno: {{ data }}</h4>
+                    <!-- Contenitore in cui il JS inietterà l'icona del meteo -->
+                    <div class="meteo-badge-day"></div>
                 </div>
                 
                 <ul class="list-group list-group-flush">
                     {% for att in attivita_giorno %}
-                        <li class="list-group-item d-flex justify-content-between align-items-start py-3">
+                        <li class="list-group-item d-flex justify-content-between align-items-start py-3 activity-item"
+                            data-date="{{ att['data'] }}"
+                            data-time="{{ att['ora_formattata'] if att['ora_formattata'] else '' }}"> 
+                            
                             <div class="ms-2 me-auto">
-                                <div class="fw-bold fs-5">
+                                <div class="fw-bold fs-5 d-flex align-items-center flex-wrap gap-2">
                                     {% if att['ora_formattata'] %} 
                                         <span class="text-primary me-2">{{ att['ora_formattata'] }}</span> 
                                     {% endif %}
-                                    {{ att['nome'] }}
+                                    <span>{{ att['nome'] }}</span>
+                                    <!-- Badge Meteo Orario dell'Attività -->
+                                    <span class="meteo-badge-activity"></span>
                                 </div>
                                 
                                 {% if att['luogo'] %}
@@ -110,4 +119,116 @@
         </a>
     </div>
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const destinazione = encodeURIComponent("{{ viaggio['destinazione'] }}");
+    
+    fetch(`/api/meteo/${destinazione}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.cod === 200 || data.cod === "200") {
+                
+                // Converte il timestamp UNIX dell'API in formato YYYY-MM-DD locale
+                function getLocalDateStr(dtSeconds) {
+                    const d = new Date(dtSeconds * 1000);
+                    const year = d.getFullYear();
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                }
+
+                // Raggruppa le rilevazioni per data locale
+                const giorniMeteo = {};
+                data.previsioni.list.forEach(item => {
+                    const localDate = getLocalDateStr(item.dt);
+                    if (!giorniMeteo[localDate]) {
+                        giorniMeteo[localDate] = [];
+                    }
+                    giorniMeteo[localDate].push(item);
+                });
+
+                // 1. POPOLA IL BADGE GIORNALIERO NELL'INTESTAZIONE
+                document.querySelectorAll('.day-card').forEach(card => {
+                    const cardDate = card.getAttribute('data-date');
+                    
+                    if (giorniMeteo[cardDate]) {
+                        const rilevazioni = giorniMeteo[cardDate];
+                        
+                        // Trova la rilevazione vicino a mezzogiorno (11:00 - 14:00) o la prima del giorno
+                        const meteoGiorno = rilevazioni.find(r => {
+                            const ora = new Date(r.dt * 1000).getHours();
+                            return ora >= 11 && ora <= 14;
+                        }) || rilevazioni[0];
+
+                        const icona = meteoGiorno.weather[0].icon;
+                        const descr = meteoGiorno.weather[0].description;
+                        const temp = Math.round(meteoGiorno.main.temp);
+                        
+                        const targetDay = card.querySelector('.meteo-badge-day');
+                        if (targetDay) {
+                            targetDay.innerHTML = `
+                                <div class="d-inline-flex align-items-center bg-white bg-opacity-25 px-2 py-1 rounded text-white fs-6" title="Previsione giornata: ${descr}">
+                                    <img src="https://openweathermap.org/img/wn/${icona}.png" alt="${descr}" style="width: 28px; height: 28px;" class="me-1">
+                                    <span class="fw-bold">${temp}°C</span>
+                                </div>
+                            `;
+                        }
+                    }
+                });
+
+                // 2. POPOLA IL BADGE ORARIO SPECIFICO PER OGNI ATTIVITÀ
+                document.querySelectorAll('.activity-item').forEach(item => {
+                    const actDate = item.getAttribute('data-date');
+                    const actTime = item.getAttribute('data-time');
+                    
+                    if (giorniMeteo[actDate] && giorniMeteo[actDate].length > 0) {
+                        const rilevazioni = giorniMeteo[actDate];
+                        let meteoScelto = null;
+
+                        if (actTime && actTime.includes(':')) {
+                            const oraAttivita = parseInt(actTime.split(':')[0], 10);
+                            
+                            // Cerca la rilevazione 3-oraria più vicina all'orario dell'attività
+                            let minDiff = 24;
+                            rilevazioni.forEach(r => {
+                                const oraMeteo = new Date(r.dt * 1000).getHours();
+                                const diff = Math.abs(oraMeteo - oraAttivita);
+                                if (diff < minDiff) {
+                                    minDiff = diff;
+                                    meteoScelto = r;
+                                }
+                            });
+                        } else {
+                            meteoScelto = rilevazioni[0];
+                        }
+
+                        if (meteoScelto) {
+                            const icona = meteoScelto.weather[0].icon;
+                            const descr = meteoScelto.weather[0].description;
+                            const temp = Math.round(meteoScelto.main.temp);
+
+                            const targetAct = item.querySelector('.meteo-badge-activity');
+                            if (targetAct) {
+                                targetAct.innerHTML = `
+                                    <span class="badge rounded-pill px-2 py-1 ms-1 d-inline-flex align-items-center" 
+                                          style="background-color: var(--surface-2); color: var(--ink); border: 1px solid var(--line); font-size: 0.8rem; font-weight: normal;" 
+                                          title="Meteo previsto alle ore ${actTime || 'indicative'}: ${descr}">
+                                        <img src="https://openweathermap.org/img/wn/${icona}.png" alt="${descr}" style="width: 20px; height: 20px;" class="me-1">
+                                        <span>${temp}°C</span>
+                                    </span>
+                                `;
+                            }
+                        }
+                    }
+                });
+
+            } else {
+                console.warn("Meteo non disponibile per la destinazione:", destinazione);
+            }
+        })
+        .catch(err => console.error("Errore caricamento meteo per l'itinerario:", err));
+});
+</script>
+
 {% endblock %}

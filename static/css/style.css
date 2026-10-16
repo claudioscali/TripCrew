@@ -2193,8 +2193,7 @@ body.dark-mode .chat-input-wrapper .form-control {
     border-color: #3b423e !important;
 }
 
-body.dark-mode input.form-control::placeholder,
-body.dark-mode .chat-input-wrapper .form-control::placeholder {
+body.dark-mode .form-control::placeholder {
     color: #9ba39e !important;
     opacity: 1;
 }
@@ -2273,3 +2272,6 @@ body.dark-mode .delete-dropdown-menu {
     border: none !important;
 }
 
+body.dark-mode .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
