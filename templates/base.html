@@ -104,6 +104,16 @@
                 }
             });
         }
+        // Mostra/nascondi password: vale per ogni pulsante .password-toggle
+        document.querySelectorAll(".password-toggle").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+                var campo = btn.parentElement.querySelector("input");
+                var eraVisibile = campo.type === "text";
+                campo.type = eraVisibile ? "password" : "text";
+                btn.textContent = eraVisibile ? "👁️" : "🙈";
+                btn.setAttribute("aria-label", eraVisibile ? "Mostra password" : "Nascondi password");
+            });
+        });
     });
 </script>
 

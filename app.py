@@ -9,15 +9,35 @@ from mysql.connector import Error
 from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+from authlib.integrations.flask_client import OAuth
+from authlib.integrations.base_client.errors import OAuthError
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
+app.permanent_session_lifetime = timedelta(days=30)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE") == "1"
+# Render sta dietro a un proxy HTTPS: senza questo i link esterni escono con http://
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+oauth = OAuth(app)
+google = oauth.register(
+    name="google",
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+
 
 @app.route("/")
 def home():
+    if "id_utente" in session:
+        return redirect(url_for("menu"))
     return render_template("home.html")
 
 
@@ -60,9 +80,10 @@ def login():
             """
             cursor.execute(query,(email,))
             utente=cursor.fetchone()
-            if utente and check_password_hash(utente[2], password):
+            if utente and utente[2] and check_password_hash(utente[2], password):
                 id_utente=utente[0]
                 username=utente[1]
+                session.permanent = True
                 session["id_utente"]=id_utente
                 session["username"]=username
                 flash("Accesso effettuato correttamente.", "success")
@@ -102,6 +123,12 @@ def registrazione():
             flash("Riempi tutti i campi.", "error")
             return render_template("registrazione.html")
         
+        if len(password) < 8:
+            flash("La password deve avere almeno 8 caratteri.", "error")
+            return render_template("registrazione.html",
+                                   username_inserito=username,
+                                   email_inserita=email)
+        
         hashed_password = generate_password_hash(password)
         
         connessione=tentativo_accesso()
@@ -119,6 +146,7 @@ def registrazione():
             
             # Eseguiamo il login automatico del nuovo utente
             id_nuovo_utente = cursor.lastrowid
+            session.permanent = True
             session["id_utente"] = id_nuovo_utente
             session["username"] = username
             
@@ -145,6 +173,98 @@ def registrazione():
             connessione.close()
     return render_template("registrazione.html")
 
+def genera_username_libero(cursor, base):
+    # tiene solo lettere, numeri e . _ - (max 30 caratteri)
+    base = "".join(c for c in base if c.isalnum() or c in "._-")[:30] or "utente"
+    candidato = base
+    numero = 1
+    while True:
+        cursor.execute("SELECT 1 FROM utenti WHERE username = %s", (candidato,))
+        if cursor.fetchone() is None:
+            return candidato
+        numero += 1
+        candidato = f"{base}{numero}"
+
+
+@app.route("/login/google")
+def login_google():
+    redirect_uri = url_for("google_callback", _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+    try:
+        token = google.authorize_access_token()
+    except OAuthError as errore:
+        print(f"Errore OAuth Google: {errore}")
+        flash("Accesso con Google non riuscito.", "error")
+        return redirect(url_for("login"))
+
+    info = token.get("userinfo")
+    if not info or not info.get("email") or not info.get("email_verified"):
+        flash("Google non ha confermato la tua email.", "error")
+        return redirect(url_for("login"))
+
+    google_id = info["sub"]
+    email = info["email"]
+    nome = info.get("name") or email.split("@")[0]
+
+    connessione = tentativo_accesso()
+    if connessione is None:
+        flash("Errore di connessione al database.", "error")
+        return redirect(url_for("login"))
+
+    cursor = None
+    try:
+        cursor = connessione.cursor(dictionary=True)
+
+        # 1. profilo Google già collegato a un account
+        cursor.execute("SELECT id, username FROM utenti WHERE google_id = %s", (google_id,))
+        utente = cursor.fetchone()
+
+        if utente is None:
+            # 2. esiste già un account con la stessa email?
+            cursor.execute("SELECT id, username FROM utenti WHERE email = %s", (email,))
+            utente = cursor.fetchone()
+
+            if utente:
+                # collega Google all'account e cancella la vecchia password
+                cursor.execute(
+                    "UPDATE utenti SET google_id = %s, password = NULL WHERE id = %s",
+                    (google_id, utente["id"])
+                )
+            else:
+                # 3. primo accesso: crea un nuovo account
+                username = genera_username_libero(cursor, nome)
+                cursor.execute(
+                    "INSERT INTO utenti (username, email, password, google_id) VALUES (%s, %s, NULL, %s)",
+                    (username, email, google_id)
+                )
+                utente = {"id": cursor.lastrowid, "username": username}
+
+            connessione.commit()
+
+        session.permanent = True
+        session["id_utente"] = utente["id"]
+        session["username"] = utente["username"]
+        flash("Accesso effettuato con Google.", "success")
+
+        # invito in sospeso, come nel login normale
+        if "pending_invitation" in session:
+            token_in_sospeso = session.pop("pending_invitation")
+            return redirect(url_for("unisciti_viaggio", token=token_in_sospeso))
+
+        return redirect(url_for("menu"))
+    except mysql.connector.Error as errore_db:
+        connessione.rollback()
+        print(f"Errore MySQL: {errore_db}")
+        flash("Si è verificato un errore durante l'accesso con Google.", "error")
+        return redirect(url_for("login"))
+    finally:
+        if cursor is not None:
+            cursor.close()
+        connessione.close()
 
 @app.route('/check_username', methods=['POST'])
 def check_username():

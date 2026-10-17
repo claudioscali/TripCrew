@@ -8,12 +8,17 @@
 <div class="container mt-4 mb-5 text-center">
   <h1>Login</h1>
   <form method="post">
-      <label>Email</label><br>
-      <input type="email" name="email" required><br><br>
+      <label for="email">Email</label><br>
+      <input type="email" id="email" name="email" autocomplete="username" required><br><br>
 
-      <label>Password</label><br>
-      <input type="password" name="password" required><br><br>
+      <label for="password">Password</label><br>
+      <div class="password-field">
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+        <button type="button" class="password-toggle" aria-label="Mostra password">👁️</button>
+      </div>
       <button type="submit">Accedi</button>
   </form>
+  <p class="mt-4 mb-2">oppure</p>
+  <a href="{{ url_for('login_google') }}" class="btn btn-outline-secondary">Continua con Google</a>
 </div>
 {% endblock %}

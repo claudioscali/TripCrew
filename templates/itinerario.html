@@ -3,7 +3,8 @@
 {% block title %}Itinerario - TripCrew{% endblock %}
 
 {% block content %}
-<div class="container mt-4 mb-5 text-start">
+<div class="container mt-4 mb-5 text-start" id="itinerario-container"
+     data-destinazione="{{ viaggio['destinazione'] }}">
     
     <h1>Itinerario e Attività</h1>
     <h2>{{ viaggio["nome"] }}</h2>
@@ -122,8 +123,9 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    const destinazione = encodeURIComponent("{{ viaggio['destinazione'] }}");
-    
+    const destinazione = encodeURIComponent(
+        document.getElementById("itinerario-container").dataset.destinazione
+    );    
     fetch(`/api/meteo/${destinazione}`)
         .then(res => res.json())
         .then(data => {

@@ -19,16 +19,8 @@
   <p>Budget per persona: {{ viaggio["budget_persona"] }}</p>
 
   <!-- ================= SEZIONE METEO ================= -->
-  <!-- <div id="meteo-container" class="card card-highlight mb-4 d-none">
-      <div class="card-body">
-          <h4 class="h5 mb-2">🌤️ Meteo a {{ viaggio["destinazione"] }}</h4>
-          <div id="meteo-dati" class="text-muted">Caricamento previsioni in corso...</div>
-      </div>
-  </div> -->
-  <!-- ================= SEZIONE METEO ================= -->
   <!-- Aggiunto style="cursor: pointer" e gli attributi per aprire il modale -->
-  <div id="meteo-container" class="card card-highlight mb-4 d-none" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#meteoModal">
-      <div class="card-body">
+  <div id="meteo-container" class="card card-highlight mb-4 d-none" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#meteoModal" data-destinazione="{{ viaggio['destinazione'] }}">      <div class="card-body">
           <div class="d-flex justify-content-between align-items-start">
               <h4 class="h5 mb-2">🌤️ Meteo a {{ viaggio["destinazione"] }}</h4>
               <small class="text-muted">Clicca per i prossimi 5 giorni ➔</small>
@@ -88,15 +80,14 @@
 <!-- Script per recuperare il meteo via Fetch -->
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    // 1. FIX VELO SCURO E TASTO X: Spostiamo il modale fuori dal tag <main>
+  
     const meteoModal = document.getElementById("meteoModal");
     document.body.appendChild(meteoModal);
 
-    const destinazione = encodeURIComponent("{{ viaggio['destinazione'] }}");
     const container = document.getElementById("meteo-container");
+    const destinazione = encodeURIComponent(container.dataset.destinazione);
     const meteoDati = document.getElementById("meteo-dati");
     const forecastBody = document.getElementById("meteo-forecast-body");
-
     fetch(`/api/meteo/${destinazione}`)
         .then(res => res.json())
         .then(data => {
