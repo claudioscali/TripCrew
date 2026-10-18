@@ -669,26 +669,55 @@ def checklist_attrezzatura(id_viaggio):
             if azione == "toggle":
                 preparato = request.form.get("preparato")
                 if item_id and preparato in ("0", "1"):
-                    cursor.execute("UPDATE attrezzatura SET preparato = %s WHERE id = %s AND viaggio_id = %s", (int(preparato), item_id, id_viaggio))
+                    cursor.execute("""
+                    UPDATE attrezzatura SET preparato = %s 
+                    WHERE id = %s AND viaggio_id = %s AND utente_id = %s
+                    """, 
+                    (int(preparato), item_id, id_viaggio, id_utente))
                     connessione.commit()
             
-            # 2. Assegna a se stessi ("Lo porto io")
+            # 2. Assegna a se stessi ("Lo porto io"), solo se l'oggetto di gruppo è ancora libero
             elif azione == "assegna":
                 if item_id:
-                    cursor.execute("UPDATE attrezzatura SET utente_id = %s WHERE id = %s AND viaggio_id = %s", (id_utente, item_id, id_viaggio))
-                    connessione.commit()
+                    cursor.execute(
+                    """
+                    UPDATE attrezzatura SET utente_id = %s
+                    WHERE id = %s AND viaggio_id = %s
+                        AND condiviso = 1 AND utente_id IS NULL
+                    """,
+                    (id_utente, item_id, id_viaggio)
+                )
+                preso = cursor.rowcount == 1
+                connessione.commit()
+                if preso:
                     flash("Hai preso in carico questo oggetto!", "success")
-            
-            # 3. Rimuovi assegnazione ("Non posso portarlo")
+                else:
+                    flash("Qualcun altro ha già preso in carico questo oggetto.", "error")
+
+            # 3. Rimuovi assegnazione ("Non posso portarlo"), solo se l'oggetto di gruppo lo porti tu
             elif azione == "rimuovi_assegnazione":
                 if item_id:
-                    cursor.execute("UPDATE attrezzatura SET utente_id = NULL, preparato = 0 WHERE id = %s AND viaggio_id = %s", (item_id, id_viaggio))
+                    cursor.execute(
+                        """
+                        UPDATE attrezzatura SET utente_id = NULL, preparato = 0
+                        WHERE id = %s AND viaggio_id = %s
+                          AND condiviso = 1 AND utente_id = %s
+                        """,
+                        (item_id, id_viaggio, id_utente)
+                    )
                     connessione.commit()
-            
-            # 4. Elimina oggetto
+
+            # 4. Elimina oggetto (di gruppo, oppure personale solo se è tuo)
             elif azione == "elimina":
                 if item_id:
-                    cursor.execute("DELETE FROM attrezzatura WHERE id = %s AND viaggio_id = %s", (item_id, id_viaggio))
+                    cursor.execute(
+                        """
+                        DELETE FROM attrezzatura
+                        WHERE id = %s AND viaggio_id = %s
+                          AND (condiviso = 1 OR utente_id = %s)
+                        """,
+                        (item_id, id_viaggio, id_utente)
+                    )
                     connessione.commit()
                     flash("Oggetto eliminato.", "success")
                     
