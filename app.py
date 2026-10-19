@@ -19,20 +19,28 @@ import json
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
+from flask_caching import Cache
+from flask_talisman import Talisman
 
 load_dotenv()
 
 app = Flask(__name__)
 
 csrf = CSRFProtect(app)
+cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache'})
 
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE") == "1"
+
 # Render sta dietro a un proxy HTTPS: senza questo i link esterni escono con http://
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# Legge se sei online in produzione (dove SESSION_COOKIE_SECURE vale "1")
+IS_PRODUCTION = os.getenv("SESSION_COOKIE_SECURE") == "1"
+Talisman(app, content_security_policy=None, force_https=IS_PRODUCTION)
 
 
 
@@ -132,6 +140,7 @@ def logout():
     return redirect(url_for("home"))
 
 @app.route("/registrazione", methods=["POST","GET"])
+@limiter.limit("5 per hour")
 def registrazione():
     if request.method=="POST":
         username=request.form.get("username", "").strip()
@@ -286,6 +295,7 @@ def google_callback():
         connessione.close()
 
 @app.route('/check_username', methods=['POST'])
+@limiter.limit("10 per minute")
 def check_username():
     data = request.get_json()
     username = data.get('username')
@@ -1524,33 +1534,37 @@ def unisciti_viaggio(token):
         connessione.close()
 
 
-@app.route("/api/meteo/<destinazione>")
-def get_meteo(destinazione):
-    if "id_utente" not in session:
-        return jsonify({"error": "Non autorizzato"}), 401
-
+# Questa funzione viene salvata in memoria per 30 minuti (1800 secondi)
+@cache.memoize(timeout=1800)
+def fetch_meteo_api(destinazione):
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key:
-        return jsonify({"error": "API Key non configurata"}), 500
-    # URL per il meteo in tempo reale
+        return {"error": "API Key non configurata", "cod": 500}
+        
     url_now = f"https://api.openweathermap.org/data/2.5/weather?q={destinazione}&units=metric&lang=it&appid={api_key}"
-    # URL per le previsioni a 5 giorni (ogni 3 ore)
     url_forecast = f"https://api.openweathermap.org/data/2.5/forecast?q={destinazione}&units=metric&lang=it&appid={api_key}"
     
     try:
         res_now = requests.get(url_now, timeout=5).json()
         res_forecast = requests.get(url_forecast, timeout=5).json()
-        
-        # Restituiamo entrambi i JSON uniti
-        return jsonify({
-            "cod": 200,
-            "corrente": res_now,
-            "previsioni": res_forecast
-        }), 200
-    except requests.RequestException as e:
-        print(f"Errore connessione meteo: {e}")
-        return jsonify({"error": "Impossibile recuperare i dati meteo", "cod": 500}), 500
+        return {"cod": 200, "corrente": res_now, "previsioni": res_forecast}
+    except requests.RequestException:
+        return {"error": "Impossibile recuperare i dati meteo", "cod": 500}
 
+@app.route("/api/meteo/<destinazione>")
+@limiter.limit("15 per minute")
+def get_meteo(destinazione):
+    # Il controllo dei permessi avviene SEMPRE
+    if "id_utente" not in session:
+        return jsonify({"error": "Non autorizzato"}), 401
+
+    # La chiamata API avviene solo se la cache è scaduta
+    dati = fetch_meteo_api(destinazione)
+    
+    if dati.get("cod") == 500:
+        return jsonify(dati), 500
+        
+    return jsonify(dati), 200
 
 @app.route('/healthz')
 def health_check():
