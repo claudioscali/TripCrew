@@ -10,6 +10,8 @@
   <h2>{{ viaggio["nome"] }}</h2>
 
   <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
       <label>Nome viaggio</label><br>
       <input type="text" name="nome_viaggio" value="{{ viaggio['nome'] }}" required><br><br>
 

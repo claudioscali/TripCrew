@@ -45,12 +45,15 @@
                     
                     <div class="d-flex align-items-center gap-3">
                         <span class="fs-5 fw-bold">€ {{ "%.2f"|format(spesa["importo"]) }}</span>
-                        
+                        {% if spesa['utente_id'] == session['id_utente'] or viaggio['creatore_id'] == session['id_utente'] %}
                         <form method="POST" onsubmit="return confirm('Vuoi eliminare questa spesa? Il bilancio verrà ricalcolato.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
                             <input type="hidden" name="azione" value="elimina">
                             <input type="hidden" name="spesa_id" value="{{ spesa['id'] }}">
                             <button type="submit" class="btn btn-outline-danger btn-sm">Elimina</button>
                         </form>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -64,6 +67,8 @@
     <!-- FORM AGGIUNGI SPESA -->
     <h3>Aggiungi una Spesa</h3>
     <form method="POST" class="mt-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        
         <input type="hidden" name="azione" value="aggiungi">
         
         <div class="mb-3">

@@ -9,6 +9,8 @@
 
   <h1>Registrazione</h1>
   <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    
     <label for="username">Nome utente</label><br>
     <input type="text" id="username" name="username" value="{{ username_inserito | default('') }}"
             autocomplete="username" autocapitalize="none" required>

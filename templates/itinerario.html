@@ -37,6 +37,16 @@
                                     <span>{{ att['nome'] }}</span>
                                     <!-- Badge Meteo Orario dell'Attività -->
                                     <span class="meteo-badge-activity"></span>
+                                    <div class="mt-2">
+                                        <a href="{{ url_for('traccia_attivita', id_viaggio=viaggio['id'], id_attivita=att['id']) }}"
+                                        class="btn btn-outline-secondary btn-sm">
+                                            {% if att['ha_gpx'] %}
+                                                🗺️ Traccia · {{ "%.1f"|format(att['gpx_km']) }} km{% if att['gpx_dislivello'] %} · ↑ {{ att['gpx_dislivello'] }} m{% endif %}
+                                            {% else %}
+                                                ➕ Aggiungi traccia GPX
+                                            {% endif %}
+                                        </a>
+                                    </div>
                                 </div>
                                 
                                 {% if att['luogo'] %}
@@ -54,6 +64,8 @@
                             
                             <!-- Pulsante Elimina -->
                             <form method="POST" onsubmit="return confirm('Vuoi eliminare questa attività?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
                                 <input type="hidden" name="azione" value="elimina">
                                 <input type="hidden" name="attivita_id" value="{{ att['id'] }}">
                                 <button type="submit" class="btn btn-outline-danger btn-sm ms-3 mt-1">Elimina</button>
@@ -74,6 +86,8 @@
         <div class="card-body">
             <h3>Aggiungi una Tappa</h3>
             <form method="POST" class="mt-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                
                 <input type="hidden" name="azione" value="aggiungi">
                 
                 <div class="row">

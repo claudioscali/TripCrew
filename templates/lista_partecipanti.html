@@ -56,19 +56,22 @@
                             <strong>{{ partecipante.username }}</strong>
                         </span>
                     </div>
+                    
+                    {% if session['id_utente'] == viaggio['creatore_id'] or session['id_utente'] == partecipante.utente_id %}
+                    <form method="POST" onsubmit="return confirm('Vuoi eliminare questo partecipante?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
-                    <form method="POST"
-                            onsubmit="return confirm(
-                                'Vuoi eliminare questo partecipante?'
-                            );">
                         <input type="hidden" name="azione" value="elimina">
-                        <input type="hidden" name="utente_id"
-                                value="{{ partecipante.utente_id }}">
-                        <button type="submit"
-                                class="btn btn-outline-danger">
+                        <input type="hidden" name="utente_id" value="{{ partecipante.utente_id }}">
+                        <button type="submit" class="btn btn-outline-danger">
+                            {% if session['id_utente'] == partecipante.utente_id %}
+                            Abbandona
+                            {% else %}
                             Elimina
+                            {% endif %}
                         </button>
                     </form>
+                    {% endif %}
 
                 </div>
             </div>
@@ -85,6 +88,8 @@
     <h3>Aggiungi un partecipante</h3>
 
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        
         <input type="hidden" name="azione" value="aggiungi">
 
         <div class="mb-3">

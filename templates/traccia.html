@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Traccia GPS - TripCrew{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+    #mappa {
+        height: 60vh;
+        min-height: 320px;
+        margin: 1rem 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        text-align: left;
+    }
+</style>
+
+<div class="container mt-4 mb-5 text-start">
+
+    <h1>Traccia GPS</h1>
+    <h2>{{ attivita["nome"] }}</h2>
+    <p class="text-muted">
+        {{ viaggio["nome"] }} &middot; {{ attivita["data"].strftime('%d/%m/%Y') }}
+    </p>
+
+    {% if punti %}
+        <p>
+            <strong>{{ attivita["gpx_nome"] }}</strong><br>
+            Distanza: <strong>{{ "%.1f"|format(attivita["gpx_km"]) }} km</strong>
+            {% if attivita["gpx_dislivello"] %}
+                &middot; Dislivello positivo: <strong>{{ attivita["gpx_dislivello"] }} m</strong>
+            {% endif %}
+        </p>
+
+        <div id="mappa"></div>
+
+        <!-- i punti della traccia, letti dallo script in fondo alla pagina -->
+        <script id="dati-traccia" type="application/json">{{ punti|tojson }}</script>
+    {% else %}
+        <p>Nessuna traccia caricata per questa attività.</p>
+    {% endif %}
+
+    <hr class="my-4">
+
+    <h3>{% if punti %}Sostituisci la traccia{% else %}Carica una traccia{% endif %}</h3>
+    <p class="text-muted">File .gpx, massimo 5 MB.</p>
+
+    <form method="POST" enctype="multipart/form-data" class="mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+        <input type="hidden" name="azione" value="carica">
+
+        <label for="gpx" class="form-label">File GPX</label>
+        <input type="file" id="gpx" name="gpx" accept=".gpx" class="form-control mb-3" required>
+
+        <button type="submit" class="btn btn-primary">Carica traccia</button>
+    </form>
+
+    {% if punti %}
+        <form method="POST" onsubmit="return confirm('Vuoi eliminare la traccia?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            
+            <input type="hidden" name="azione" value="elimina">
+            <button type="submit" class="btn btn-outline-danger">Elimina traccia</button>
+        </form>
+    {% endif %}
+
+    <a href="{{ url_for('itinerario_viaggio', id_viaggio=viaggio['id']) }}"
+       class="btn btn-outline-secondary mt-4">
+        Torna all'itinerario
+    </a>
+</div>
+
+{% if punti %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    var punti = JSON.parse(document.getElementById("dati-traccia").textContent);
+
+    // due sfondi: carta topografica (curve di livello) e stradale
+    var topografica = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+        maxZoom: 17,
+        attribution: "Dati &copy; OpenStreetMap, SRTM | Stile &copy; OpenTopoMap (CC-BY-SA)"
+    });
+    var stradale = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap contributors"
+    });
+
+    var mappa = L.map("mappa", { layers: [topografica] });
+    L.control.layers({ "Topografica": topografica, "Stradale": stradale }).addTo(mappa);
+
+    // la traccia, con partenza e arrivo
+    var linea = L.polyline(punti, { color: "#b9501d", weight: 4 }).addTo(mappa);
+    L.marker(punti[0]).addTo(mappa).bindPopup("Partenza");
+    L.marker(punti[punti.length - 1]).addTo(mappa).bindPopup("Arrivo");
+
+    // zoom in modo che si veda tutta la traccia
+    mappa.fitBounds(linea.getBounds(), { padding: [20, 20] });
+});
+</script>
+{% endif %}
+{% endblock %}

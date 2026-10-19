@@ -34,6 +34,8 @@
                         <!-- Non assegnato a nessuno -->
                         <span class="text-warning fw-bold me-2">Da assegnare</span>
                         <form method="POST">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
                             <input type="hidden" name="azione" value="assegna">
                             <input type="hidden" name="item_id" value="{{ item.id }}">
                             <button type="submit" class="btn btn-primary btn-sm">Lo porto io!</button>
@@ -43,6 +45,8 @@
                         <span class="text-success fw-bold me-2">Lo porti tu</span>
                         
                         <form method="POST">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
                             <input type="hidden" name="azione" value="toggle">
                             <input type="hidden" name="item_id" value="{{ item.id }}">
                             <input type="hidden" name="preparato" value="{% if item.preparato %}0{% else %}1{% endif %}">
@@ -52,6 +56,8 @@
                         </form>
                         
                         <form method="POST" onsubmit="return confirm('Sicuro di non poterlo più portare?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
                             <input type="hidden" name="azione" value="rimuovi_assegnazione">
                             <input type="hidden" name="item_id" value="{{ item.id }}">
                             <button type="submit" class="btn btn-outline-danger btn-sm">X</button>
@@ -68,6 +74,8 @@
 
                     <!-- Il creatore o chiunque può comunque eliminare un oggetto -->
                     <form method="POST" onsubmit="return confirm('Vuoi eliminare questo oggetto?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
                         <input type="hidden" name="azione" value="elimina">
                         <input type="hidden" name="item_id" value="{{ item.id }}">
                         <button type="submit" class="btn btn-outline-danger btn-sm">Elimina</button>
@@ -92,6 +100,8 @@
 
                 <div class="d-flex gap-2">
                     <form method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
                         <input type="hidden" name="azione" value="toggle">
                         <input type="hidden" name="item_id" value="{{ item.id }}">
                         <input type="hidden" name="preparato" value="{% if item.preparato %}0{% else %}1{% endif %}">
@@ -101,6 +111,8 @@
                     </form>
 
                     <form method="POST" onsubmit="return confirm('Vuoi eliminare questo oggetto dalla tua lista?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
                         <input type="hidden" name="azione" value="elimina">
                         <input type="hidden" name="item_id" value="{{ item.id }}">
                         <button type="submit" class="btn btn-outline-danger">Elimina</button>
@@ -117,6 +129,8 @@
     <!-- FORM AGGIUNTA -->
     <h3>Aggiungi un oggetto</h3>
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        
         <input type="hidden" name="azione" value="aggiungi">
 
         <div class="mb-3">

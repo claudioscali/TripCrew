@@ -13,11 +13,16 @@ from datetime import datetime, timedelta
 from authlib.integrations.flask_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
 from werkzeug.middleware.proxy_fix import ProxyFix
-
+from defusedxml import ElementTree as DefusedET
+import math
+import json
+from flask_wtf.csrf import CSRFProtect
+csrf = CSRFProtect(app)
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE") == "1"
@@ -890,16 +895,19 @@ def lista_partecipanti(id_viaggio):
                 utente_da_eliminare=request.form.get("utente_id", "")
 
                 if utente_da_eliminare.isdigit():
-                    cursor.execute(
-                        """
-                        DELETE FROM partecipanti
-                        WHERE utente_id = %s AND viaggio_id=%s
-                        """,
-                        (int(utente_da_eliminare), id_viaggio)
-                    )
-                    connessione.commit()
-
-                    flash("Partecipante eliminato dalla lista.", "success")
+                    # Controllo autorizzazione: sei il creatore, oppure stai auto-eliminando te stesso?
+                        if id_utente == viaggio["creatore_id"] or id_utente == int(utente_da_eliminare):
+                            cursor.execute(
+                                """
+                                DELETE FROM partecipanti
+                                WHERE utente_id = %s AND viaggio_id=%s
+                                """,
+                                (int(utente_da_eliminare), id_viaggio)
+                            )
+                            connessione.commit()
+                            flash("Partecipante rimosso dal viaggio.", "success")
+                        else:
+                            flash("Non hai i permessi per rimuovere questo partecipante.", "error")
                 else:
                     flash("Utente non valido.", "error")
             return redirect(url_for("lista_partecipanti", id_viaggio=id_viaggio))
@@ -991,12 +999,17 @@ def gestione_spese(id_viaggio):
                 if spesa_id:
                     cursor.execute(
                         """
-                        DELETE FROM spese WHERE id = %s AND viaggio_id = %s
+                        DELETE FROM spese 
+                        WHERE id = %s AND viaggio_id = %s AND utente_id = %s
                         """, 
-                        (spesa_id, id_viaggio)
+                        (spesa_id, id_viaggio, id_utente)
                         )
+                    eliminato=cursor.rowcount 
                     connessione.commit()
-                    flash("Spesa eliminata.", "success")
+                    if not eliminato:
+                        flash("Non puoi eliminare una spesa che non hai fatto.", "error")
+                    else:
+                        flash("Spesa eliminata.", "success")
             
             return redirect(url_for("gestione_spese", id_viaggio=id_viaggio))
 
@@ -1018,7 +1031,7 @@ def gestione_spese(id_viaggio):
 
         cursor.execute(
             """
-            SELECT s.id, s.descrizione, s.importo, s.categoria, s.data, u.username AS pagatore
+            SELECT s.id, s.utente_id, s.descrizione, s.importo, s.categoria, s.data, u.username AS pagatore
             FROM spese s
             JOIN utenti u ON s.utente_id = u.id
             WHERE s.viaggio_id = %s
@@ -1149,6 +1162,81 @@ def chat_viaggio(id_viaggio):
         if cursor: cursor.close()
         connessione.close()
 
+# ---------- Lettura e analisi dei file GPX ----------
+
+def leggi_gpx(contenuto):
+    """Legge un file GPX (bytes) e restituisce (punti, quote)."""
+    try:
+        radice = DefusedET.fromstring(contenuto)
+    except Exception:
+        raise ValueError("Il file non è un GPX valido.")
+
+    punti = []
+    quote = []
+    # prima cerca i punti di una traccia (trkpt), poi quelli di un percorso (rtept)
+    for tag_punto in ("trkpt", "rtept"):
+        for el in radice.iter():
+            if not isinstance(el.tag, str) or el.tag.split("}")[-1] != tag_punto:
+                continue
+            try:
+                lat = float(el.get("lat"))
+                lon = float(el.get("lon"))
+            except (TypeError, ValueError):
+                continue
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                continue
+            punti.append([lat, lon])
+            for figlio in el:
+                if isinstance(figlio.tag, str) and figlio.tag.split("}")[-1] == "ele":
+                    try:
+                        quota = float(figlio.text)
+                    except (TypeError, ValueError):
+                        continue
+                    if math.isfinite(quota):
+                        quote.append(quota)
+        if punti:
+            break
+
+    if len(punti) < 2:
+        raise ValueError("Nel file non ci sono abbastanza punti per disegnare una traccia.")
+    return punti, quote
+
+
+def distanza_km(punti):
+    """Distanza totale in km (formula di Haversine)."""
+    totale = 0.0
+    for (lat1, lon1), (lat2, lon2) in zip(punti, punti[1:]):
+        p1, p2 = math.radians(lat1), math.radians(lat2)
+        dp = p2 - p1
+        dl = math.radians(lon2 - lon1)
+        a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+        totale += 6371.0 * 2 * math.asin(math.sqrt(a))
+    return totale
+
+
+def dislivello_positivo(quote):
+    """Salita totale in metri, ignorando le oscillazioni minori di 3 m."""
+    if len(quote) < 2:
+        return 0
+    riferimento = quote[0]
+    salita = 0.0
+    for q in quote[1:]:
+        if q - riferimento >= 3:
+            salita += q - riferimento
+            riferimento = q
+        elif riferimento - q >= 3:
+            riferimento = q
+    return round(salita)
+
+
+def semplifica(punti, massimo=3000):
+    """Tiene al massimo ~3000 punti e arrotonda le coordinate a 5 decimali."""
+    if len(punti) > massimo:
+        passo = len(punti) / massimo
+        punti = [punti[int(i * passo)] for i in range(massimo)] + [punti[-1]]
+    return [[round(lat, 5), round(lon, 5)] for lat, lon in punti]
+
+
 
 @app.route("/viaggio/<int:id_viaggio>/itinerario", methods=["GET", "POST"])
 def itinerario_viaggio(id_viaggio):
@@ -1219,7 +1307,8 @@ def itinerario_viaggio(id_viaggio):
 
         # 3. Recupera e raggruppa le attività
         cursor.execute("""
-            SELECT id, nome, descrizione, data, TIME_FORMAT(ora, '%H:%i') as ora_formattata, luogo, COSTO
+            SELECT id, nome, descrizione, data, TIME_FORMAT(ora, '%H:%i') as ora_formattata, luogo, COSTO,
+                   (gpx_punti IS NOT NULL) AS ha_gpx, gpx_km, gpx_dislivello
             FROM attivita
             WHERE viaggio_id = %s
             ORDER BY data ASC, ora ASC
@@ -1248,7 +1337,116 @@ def itinerario_viaggio(id_viaggio):
         if cursor: cursor.close()
         connessione.close()
 
+@app.errorhandler(413)
+def file_troppo_grande(errore):
+    flash("Il file è troppo grande (massimo 5 MB).", "error")
+    id_viaggio = (request.view_args or {}).get("id_viaggio")
+    if id_viaggio:
+        return redirect(url_for("itinerario_viaggio", id_viaggio=id_viaggio))
+    return redirect(url_for("menu"))
 
+
+@app.route("/viaggio/<int:id_viaggio>/attivita/<int:id_attivita>/traccia", methods=["GET", "POST"])
+def traccia_attivita(id_viaggio, id_attivita):
+    if "id_utente" not in session:
+        return redirect(url_for("login"))
+
+    id_utente = session["id_utente"]
+    connessione = tentativo_accesso()
+
+    if connessione is None:
+        flash("Errore di connessione al database.", "error")
+        return redirect(url_for("menu"))
+
+    cursor = None
+    try:
+        cursor = connessione.cursor(dictionary=True)
+
+        # 1. Il viaggio deve esistere e l'utente deve farne parte
+        cursor.execute("""
+            SELECT v.id, v.nome
+            FROM viaggi v
+            WHERE v.id = %s AND (
+                v.creatore_id = %s OR EXISTS (
+                    SELECT 1 FROM partecipanti p WHERE p.viaggio_id = v.id AND p.utente_id = %s
+                )
+            )
+        """, (id_viaggio, id_utente, id_utente))
+        viaggio = cursor.fetchone()
+
+        if not viaggio:
+            flash("Viaggio non trovato o non accessibile.", "error")
+            return redirect(url_for("menu"))
+
+        # 2. L'attività deve appartenere a questo viaggio
+        cursor.execute("""
+            SELECT id, nome, data, gpx_nome, gpx_punti, gpx_km, gpx_dislivello
+            FROM attivita
+            WHERE id = %s AND viaggio_id = %s
+        """, (id_attivita, id_viaggio))
+        attivita = cursor.fetchone()
+
+        if not attivita:
+            flash("Attività non trovata.", "error")
+            return redirect(url_for("itinerario_viaggio", id_viaggio=id_viaggio))
+
+        if request.method == "POST":
+            azione = request.form.get("azione")
+
+            if azione == "carica":
+                file = request.files.get("gpx")
+
+                if not file or not file.filename:
+                    flash("Seleziona un file GPX.", "error")
+                elif not file.filename.lower().endswith(".gpx"):
+                    flash("Il file deve avere estensione .gpx.", "error")
+                else:
+                    try:
+                        punti, quote = leggi_gpx(file.read())
+                    except ValueError as errore:
+                        flash(str(errore), "error")
+                    else:
+                        km = round(distanza_km(punti), 2)
+                        dislivello = dislivello_positivo(quote)
+                        punti_json = json.dumps(semplifica(punti), separators=(",", ":"))
+                        nome_file = os.path.basename(file.filename)[:150]
+
+                        cursor.execute("""
+                            UPDATE attivita
+                            SET gpx_nome = %s, gpx_punti = %s, gpx_km = %s, gpx_dislivello = %s
+                            WHERE id = %s AND viaggio_id = %s
+                        """, (nome_file, punti_json, km, dislivello, id_attivita, id_viaggio))
+                        connessione.commit()
+                        flash("Traccia caricata.", "success")
+
+            elif azione == "elimina":
+                cursor.execute("""
+                    UPDATE attivita
+                    SET gpx_nome = NULL, gpx_punti = NULL, gpx_km = NULL, gpx_dislivello = NULL
+                    WHERE id = %s AND viaggio_id = %s
+                """, (id_attivita, id_viaggio))
+                connessione.commit()
+                flash("Traccia eliminata.", "success")
+
+            return redirect(url_for("traccia_attivita", id_viaggio=id_viaggio, id_attivita=id_attivita))
+
+        # GET: i punti sono salvati come testo JSON, li riconvertiamo in lista
+        punti = json.loads(attivita["gpx_punti"]) if attivita["gpx_punti"] else None
+
+        return render_template(
+            "traccia.html",
+            viaggio=viaggio,
+            attivita=attivita,
+            punti=punti
+        )
+
+    except mysql.connector.Error as errore_db:
+        print(f"Errore MySQL: {errore_db}")
+        flash("Si è verificato un errore con la traccia GPX.", "error")
+        return redirect(url_for("itinerario_viaggio", id_viaggio=id_viaggio))
+    finally:
+        if cursor: cursor.close()
+        connessione.close()
 
 @app.route("/join/<token>")
 def unisciti_viaggio(token):

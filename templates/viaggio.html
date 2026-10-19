@@ -45,18 +45,16 @@
     </div>
   </div>
 
-  <a href="{{ url_for('itinerario_viaggio', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">Itinerario e Attività</a>
-  <br>
-
-  <a href="{{ url_for('checklist_attrezzatura', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">Gestisci attrezzatura</a>
-
-  <br>
+  <a href="{{ url_for('itinerario_viaggio', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">🤸🏼 Itinerario e Attività</a>
   
-  <a href="{{ url_for('lista_partecipanti', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">Lista partecipanti</a>
   <br>
-  <a href="{{ url_for('gestione_spese', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">Gestisci Spese</a>
+  <a href="{{ url_for('gestione_spese', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">💸 Spese</a>
   <br>
-  <a href="{{ url_for('chat_viaggio', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">Bacheca Chat</a>
+  <a href="{{ url_for('chat_viaggio', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">💬 Chat</a>
+  <br>  
+  <a href="{{ url_for('checklist_attrezzatura', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">🎒 Attrezzatura</a>
+  <br>
+  <a href="{{ url_for('lista_partecipanti', id_viaggio=viaggio['id'])}}" class="btn btn-primary mt-2">👥 Partecipanti</a>
   <br>
     {% if viaggio["creatore_id"] == session["id_utente"] %}
     
@@ -66,6 +64,8 @@
       <form method="POST"
             action="{{ url_for('elimina_viaggio', id_viaggio=viaggio['id']) }}"
             onsubmit="return confirm('Vuoi eliminare questo viaggio? Verranno eliminati anche attrezzatura, partecipanti, spese e messaggi.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            
         <button type="submit" class="btn btn-outline-danger mt-3">Elimina viaggio</button>
       </form>
     </div>
@@ -80,7 +80,7 @@
 <!-- Script per recuperare il meteo via Fetch -->
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-  
+
     const meteoModal = document.getElementById("meteoModal");
     document.body.appendChild(meteoModal);
 

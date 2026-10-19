@@ -27,6 +27,8 @@
                                             <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                                                 <li>
                                                     <form method="POST" onsubmit="return confirm('Vuoi eliminare questo messaggio?');">
+                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                                        
                                                         <input type="hidden" name="azione" value="elimina">
                                                         <input type="hidden" name="messaggio_id" value="{{ msg.id }}">
                                                         <button type="submit" class="btn-delete-pill">Elimina messaggio</button>
@@ -61,6 +63,8 @@
     <!-- Barra di testo -->
     <div class="bg-white border-top p-3 sticky-bottom shadow-lg">
         <form method="POST" class="container chat-input-wrapper">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
             <input type="hidden" name="azione" value="invia">
             <div class="input-group">
                 <input type="text" name="testo" class="form-control rounded-pill me-2" placeholder="Scrivi un messaggio..." required autocomplete="off">

@@ -10,6 +10,8 @@
 
   <h1>Crea un nuovo viaggio</h1>
   <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
       <label>Nome viaggio</label><br>
       <input type="text" name="nome_viaggio" required><br><br>
 
