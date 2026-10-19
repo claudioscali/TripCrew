@@ -16,11 +16,16 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from defusedxml import ElementTree as DefusedET
 import math
 import json
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
-csrf = CSRFProtect(app)
+
 load_dotenv()
 
 app = Flask(__name__)
+
+csrf = CSRFProtect(app)
+
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 app.permanent_session_lifetime = timedelta(days=30)
@@ -28,6 +33,14 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE") == "1"
 # Render sta dietro a un proxy HTTPS: senza questo i link esterni escono con http://
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"]
+)
 
 oauth = OAuth(app)
 google = oauth.register(
@@ -65,6 +78,7 @@ def tentativo_accesso():
 
 
 @app.route("/login", methods=["POST", "GET"])
+@limiter.limit("5 per minute")  # Protezione specifica contro brute-force
 def login():
     if request.method=="POST":
         email=request.form.get("email", "").strip()
