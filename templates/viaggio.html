@@ -12,12 +12,31 @@
 
   <p>Destinazione: {{ viaggio["destinazione"] }}</p>
 
-  <p>Data di inizio: {{ viaggio["data_inizio"] }}</p>
+  <p>Data di inizio: {{ viaggio["data_inizio"].strftime('%d/%m/%Y') }}</p>
 
-  <p>Data di fine: {{ viaggio["data_fine"] }}</p>
+  <p>Data di fine: {{ viaggio["data_fine"].strftime('%d/%m/%Y') }}</p>
 
-  <p>Budget per persona: {{ viaggio["budget_persona"] }}</p>
+  <p>Budget per persona: €{{ viaggio["budget_persona"] }}</p>
 
+  <p><strong>⏳ {{ stato_viaggio }}</strong></p>
+  {% if prossima_tappa %}
+  <p>📍 Prossima tappa: <strong>{{ prossima_tappa["nome"] }}</strong> — {{ prossima_tappa["data"].strftime('%d/%m') }}{% if prossima_tappa["ora_formattata"] %} alle {{ prossima_tappa["ora_formattata"] }}{% endif %}</p>
+  {% endif %}
+
+  <div class="riepiloghi">
+    <a href="{{ url_for('checklist_attrezzatura', id_viaggio=viaggio['id']) }}" class="riepilogo">
+      <strong>{{ riepilogo["prep_attrezzatura"] }}/{{ riepilogo["tot_attrezzatura"] }}</strong>
+      <small>🎒 Attrezzatura</small>
+    </a>
+    <a href="{{ url_for('gestione_spese', id_viaggio=viaggio['id']) }}" class="riepilogo">
+      <strong>€ {{ "%.2f"|format(riepilogo["tot_spese"]) }}</strong>
+      <small>💸 Spese</small>
+    </a>
+    <a href="{{ url_for('lista_partecipanti', id_viaggio=viaggio['id']) }}" class="riepilogo">
+      <strong>{{ riepilogo["n_partecipanti"] }}</strong>
+      <small>👥 Partecipanti</small>
+    </a>
+  </div>
   <!-- ================= SEZIONE METEO ================= -->
   <!-- Aggiunto style="cursor: pointer" e gli attributi per aprire il modale -->
   <div id="meteo-container" class="card card-highlight mb-4 d-none" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#meteoModal" data-destinazione="{{ viaggio['destinazione'] }}">      <div class="card-body">

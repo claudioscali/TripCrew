@@ -9,7 +9,7 @@ from mysql.connector import Error
 from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from authlib.integrations.flask_client import OAuth
 from authlib.integrations.base_client.errors import OAuthError
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -496,10 +496,51 @@ def viaggio(id_viaggio):
             flash("Viaggio non trovato o non accessibile.", "error")
             return redirect(url_for("menu"))
         
+        # riepiloghi mostrati nella pagina del viaggio
+        cursor.execute("""
+            SELECT
+              (SELECT COUNT(*) FROM attrezzatura
+                WHERE viaggio_id = %s AND (condiviso = 1 OR utente_id = %s)) AS tot_attrezzatura,
+              (SELECT COUNT(*) FROM attrezzatura
+                WHERE viaggio_id = %s AND preparato = 1 AND (condiviso = 1 OR utente_id = %s)) AS prep_attrezzatura,
+              (SELECT COALESCE(SUM(importo), 0) FROM spese WHERE viaggio_id = %s) AS tot_spese,
+              (SELECT COUNT(*) FROM (
+                    SELECT creatore_id AS u_id FROM viaggi WHERE id = %s
+                    UNION
+                    SELECT utente_id FROM partecipanti WHERE viaggio_id = %s
+              ) AS tutti) AS n_partecipanti
+        """, (id_viaggio, id_utente, id_viaggio, id_utente, id_viaggio, id_viaggio, id_viaggio))
+        riepilogo = cursor.fetchone()
+
+        oggi = date.today()
+        giorni = (viaggio["data_inizio"] - oggi).days
+        if giorni > 1:
+            stato_viaggio = f"Mancano {giorni} giorni alla partenza"
+        elif giorni == 1:
+            stato_viaggio = "Si parte domani!"
+        elif giorni == 0:
+            stato_viaggio = "Si parte oggi!"
+        elif oggi <= viaggio["data_fine"]:
+            stato_viaggio = "Viaggio in corso"
+        else:
+            stato_viaggio = "Viaggio concluso"
+
+        cursor.execute("""
+            SELECT nome, data, TIME_FORMAT(ora, '%H:%i') AS ora_formattata
+            FROM attivita
+            WHERE viaggio_id = %s AND data >= %s
+            ORDER BY data ASC, ora ASC
+            LIMIT 1
+        """, (id_viaggio, oggi))
+        prossima_tappa = cursor.fetchone()
+
         return render_template(
             "viaggio.html",
             username=username,
-            viaggio=viaggio
+            viaggio=viaggio,
+            riepilogo=riepilogo,
+            stato_viaggio=stato_viaggio,
+            prossima_tappa=prossima_tappa
         )
     except Error as errore_db:
         print(f"Errore MySQL: {errore_db}")
