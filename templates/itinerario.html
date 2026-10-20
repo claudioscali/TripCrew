@@ -145,13 +145,15 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(data => {
             if (data.cod === 200 || data.cod === "200") {
                 
-                // Converte il timestamp UNIX dell'API in formato YYYY-MM-DD locale
+                // Data e ora nel fuso orario della destinazione (non in quello del browser)
+                const tz = (data.previsioni.city || {}).timezone || 0;
+                function dataLocale(dtSeconds) {
+                    return new Date((dtSeconds + tz) * 1000);
+                }
+
+                // Converte il timestamp UNIX dell'API in formato YYYY-MM-DD (data locale della destinazione)
                 function getLocalDateStr(dtSeconds) {
-                    const d = new Date(dtSeconds * 1000);
-                    const year = d.getFullYear();
-                    const month = String(d.getMonth() + 1).padStart(2, '0');
-                    const day = String(d.getDate()).padStart(2, '0');
-                    return `${year}-${month}-${day}`;
+                    return dataLocale(dtSeconds).toISOString().slice(0, 10);
                 }
 
                 // Raggruppa le rilevazioni per data locale
@@ -173,7 +175,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         
                         // Trova la rilevazione vicino a mezzogiorno (11:00 - 14:00) o la prima del giorno
                         const meteoGiorno = rilevazioni.find(r => {
-                            const ora = new Date(r.dt * 1000).getHours();
+                            const ora = dataLocale(r.dt).getUTCHours();
                             return ora >= 11 && ora <= 14;
                         }) || rilevazioni[0];
 
@@ -208,7 +210,7 @@ document.addEventListener("DOMContentLoaded", function() {
                             // Cerca la rilevazione 3-oraria più vicina all'orario dell'attività
                             let minDiff = 24;
                             rilevazioni.forEach(r => {
-                                const oraMeteo = new Date(r.dt * 1000).getHours();
+                                const oraMeteo = dataLocale(r.dt).getUTCHours();
                                 const diff = Math.abs(oraMeteo - oraAttivita);
                                 if (diff < minDiff) {
                                     minDiff = diff;

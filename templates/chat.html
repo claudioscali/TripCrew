@@ -101,6 +101,10 @@
         
         // 3. IL MOTORE IN TEMPO REALE (Polling Intelligente)
         function aggiornaChat() {
+            // Scheda in background: niente richieste inutili
+            if (document.hidden) {
+                return;
+            }
             // Controlla se c'è un menù a tendina aperto al momento (.show è la classe usata da Bootstrap)
             var menuAperto = chatContainer.querySelector('.dropdown-menu.show');
             
@@ -134,6 +138,13 @@
 
         // Fai partire il controllo automatico ogni 3 secondi (3000 millisecondi)
         setInterval(aggiornaChat, 3000);
+
+        // Quando torni sulla scheda, aggiorna subito
+        document.addEventListener("visibilitychange", function() {
+            if (!document.hidden) {
+                aggiornaChat();
+            }
+        });
 
         // 4. INVIO ISTANTANEO (AJAX)
         if (formInvio) {

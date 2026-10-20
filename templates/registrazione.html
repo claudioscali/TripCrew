@@ -18,35 +18,36 @@
     <span id="username-feedback" style="color: red; display: none;">Username già in uso!</span>
 
       <script>
+      var timerUsername;
       document.getElementById('username').addEventListener('input', function() {
-          let username = this.value;
-          if (username.length > 2) { 
+          var username = this.value;
+          var feedback = document.getElementById('username-feedback');
+          var btnRegister = document.getElementById('btn-register');
+          clearTimeout(timerUsername);
+
+          if (username.length <= 2) {
+              feedback.style.display = 'none';
+              btnRegister.disabled = false;
+              return;
+          }
+
+          // aspetta che l'utente smetta di scrivere prima di interrogare il server
+          timerUsername = setTimeout(function() {
               fetch('/check_username', {
                   method: 'POST',
                   headers: {
                       'Content-Type': 'application/json',
+                      'X-CSRFToken': '{{ csrf_token() }}'
                   },
                   body: JSON.stringify({ username: username })
               })
-              .then(response => response.json())
-              .then(data => {
-                  const feedback = document.getElementById('username-feedback');
-                  const btnRegister = document.getElementById('btn-register'); // Seleziona il bottone
-
-                  if (data.exists) {
-                      feedback.style.display = 'block';
-                      btnRegister.disabled = true; // Disabilita il bottone
-                  } else {
-                      feedback.style.display = 'none';
-                      btnRegister.disabled = false; // Riabilita il bottone
-                  }
+              .then(function(response) { return response.json(); })
+              .then(function(data) {
+                  feedback.style.display = data.exists ? 'block' : 'none';
+                  btnRegister.disabled = !!data.exists;
               })
-              .catch(error => console.error('Errore:', error));
-          } else {
-              // Nascondi il messaggio se l'utente cancella e torna sotto i 3 caratteri
-              document.getElementById('username-feedback').style.display = 'none';
-              document.getElementById('btn-register').disabled = false;
-          }
+              .catch(function(error) { console.error('Errore:', error); });
+          }, 400);
       });
       </script>
 

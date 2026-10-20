@@ -9,7 +9,7 @@
   <h1>Modifica viaggio</h1>
   <h2>{{ viaggio["nome"] }}</h2>
 
-  <form method="post">
+  <form method="post" id="form-modifica" data-tipo-originale="{{ viaggio['tipo_viaggio'] }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
       <label>Nome viaggio</label><br>
@@ -39,6 +39,30 @@
 
       <button type="submit">Salva Modifiche</button>
   </form>
+
+  <script>
+    document.getElementById("form-modifica").addEventListener("submit", function (e) {
+        var nuovo = document.getElementById("tipo_viaggio").value;
+        if (nuovo !== this.dataset.tipoOriginale &&
+            !confirm("Cambiando tipologia, gli oggetti del vecchio modello vengono sostituiti da quelli del nuovo (le assegnazioni e le spunte di quegli oggetti andranno perse). Gli oggetti che hai aggiunto tu restano. Continuare?")) {
+            e.preventDefault();
+        }
+    });
+  </script>
+  <script>
+  var dataInizio = document.querySelector('input[name="data_inizio"]');
+  var dataFine = document.querySelector('input[name="data_fine"]');
+
+  function aggiornaMinimo() {
+      dataFine.min = dataInizio.value;
+      if (dataFine.value && dataFine.value < dataInizio.value) {
+          dataFine.value = "";
+      }
+  }
+
+  aggiornaMinimo(); // al caricamento, con le date già presenti
+  dataInizio.addEventListener("change", aggiornaMinimo);
+</script>
 
     <a href="{{ url_for('viaggio', id_viaggio=viaggio['id']) }}"
        class="btn btn-outline-secondary mt-3">

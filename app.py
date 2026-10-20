@@ -16,6 +16,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from defusedxml import ElementTree as DefusedET
 import math
 import json
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
@@ -49,6 +50,14 @@ limiter = Limiter(
     app=app,
     default_limits=["200 per day", "50 per hour"]
 )
+
+
+def chiave_utente():
+    """Limite per utente loggato (altrimenti per IP): amici sullo stesso Wi-Fi non si bloccano a vicenda."""
+    return str(session.get("id_utente") or get_remote_address())
+
+
+CENTESIMO = Decimal("0.01")
 
 oauth = OAuth(app)
 google = oauth.register(
@@ -161,7 +170,7 @@ def registrazione():
         
         connessione=tentativo_accesso()
         if connessione is None:
-            flash("Errore di connessione al database")
+            flash("Errore di connessione al database", "error")
             return render_template("registrazione.html")
         cursor=None
         try:
@@ -295,10 +304,12 @@ def google_callback():
         connessione.close()
 
 @app.route('/check_username', methods=['POST'])
-@limiter.limit("10 per minute")
+@limiter.limit("30 per minute")
 def check_username():
-    data = request.get_json()
-    username = data.get('username')
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    if not username:
+        return jsonify({"exists": False})
     
     connessione = tentativo_accesso()
     if connessione is None:
@@ -396,7 +407,7 @@ def create_trip():
         connessione=tentativo_accesso()
         
         if connessione is None:
-            flash("Errore di connessione al database")
+            flash("Errore di connessione al database", "error")
             return render_template("create_trip.html", username=session["username"])
         cursor=None
         try:
@@ -617,33 +628,52 @@ def modifica_viaggio(id_viaggio):
             cursor.execute(query, (nome_viaggio, destinazione, data_inizio, data_fine, budget, tipo_viaggio, tipo_viaggio_id, id_viaggio, id_utente))
 
             if vecchio_tipo_id != tipo_viaggio_id:
-                # Rimuove la vecchia attrezzatura associata al viaggio
-                cursor.execute("DELETE FROM attrezzatura WHERE viaggio_id = %s", (id_viaggio,))
-                
-                # 3A. Inserisce la nuova attrezzatura DI GRUPPO
+                # Sostituisce solo gli oggetti del vecchio modello: quelli aggiunti a mano
+                # e quelli presenti anche nel nuovo modello restano (con assegnazioni e spunte)
+                cursor.execute("""
+                    DELETE a FROM attrezzatura a
+                    JOIN modelli_attrezzatura mv
+                      ON mv.tipo_viaggio_id = %s AND mv.nome = a.nome
+                     AND mv.categoria = a.categoria AND mv.condiviso = a.condiviso
+                    WHERE a.viaggio_id = %s
+                      AND NOT EXISTS (
+                          SELECT 1 FROM modelli_attrezzatura mn
+                          WHERE mn.tipo_viaggio_id = %s AND mn.nome = a.nome AND mn.condiviso = a.condiviso
+                      )
+                """, (vecchio_tipo_id, id_viaggio, tipo_viaggio_id))
+
+                # Aggiunge gli oggetti DI GRUPPO del nuovo modello che mancano
                 cursor.execute("""
                     INSERT INTO attrezzatura (nome, categoria, viaggio_id, condiviso)
-                    SELECT nome, categoria, %s, 1
-                    FROM modelli_attrezzatura 
-                    WHERE tipo_viaggio_id = %s AND condiviso = 1
-                """, (id_viaggio, tipo_viaggio_id))
+                    SELECT m.nome, m.categoria, %s, 1
+                    FROM modelli_attrezzatura m
+                    WHERE m.tipo_viaggio_id = %s AND m.condiviso = 1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM attrezzatura a
+                          WHERE a.viaggio_id = %s AND a.condiviso = 1 AND a.nome = m.nome
+                      )
+                """, (id_viaggio, tipo_viaggio_id, id_viaggio))
 
-                # 3B. Recupera tutti gli utenti attualmente iscritti al viaggio (creatore + partecipanti)
+                # Utenti attuali del viaggio (creatore + partecipanti)
                 cursor.execute("""
                     SELECT creatore_id AS u_id FROM viaggi WHERE id = %s
-                    UNION 
+                    UNION
                     SELECT utente_id AS u_id FROM partecipanti WHERE viaggio_id = %s
                 """, (id_viaggio, id_viaggio))
                 utenti_attuali = cursor.fetchall()
 
-                # 3C. Crea l'attrezzatura PERSONALE per OGNUNO di loro
+                # A ciascuno aggiunge gli oggetti PERSONALI del nuovo modello che gli mancano
                 for u in utenti_attuali:
                     cursor.execute("""
                         INSERT INTO attrezzatura (nome, categoria, viaggio_id, condiviso, utente_id)
-                        SELECT nome, categoria, %s, 0, %s
-                        FROM modelli_attrezzatura 
-                        WHERE tipo_viaggio_id = %s AND condiviso = 0
-                    """, (id_viaggio, u['u_id'], tipo_viaggio_id))
+                        SELECT m.nome, m.categoria, %s, 0, %s
+                        FROM modelli_attrezzatura m
+                        WHERE m.tipo_viaggio_id = %s AND m.condiviso = 0
+                          AND NOT EXISTS (
+                              SELECT 1 FROM attrezzatura a
+                              WHERE a.viaggio_id = %s AND a.condiviso = 0 AND a.utente_id = %s AND a.nome = m.nome
+                          )
+                    """, (id_viaggio, u['u_id'], tipo_viaggio_id, id_viaggio, u['u_id']))
 
             connessione.commit()
             
@@ -825,6 +855,19 @@ def checklist_attrezzatura(id_viaggio):
 
 
 
+def crea_attrezzatura_personale(cursor, id_viaggio, utente_id):
+    """Dà al nuovo partecipante gli oggetti personali già presenti nel viaggio (modello + aggiunti a mano)."""
+    cursor.execute(
+        """
+        INSERT INTO attrezzatura (nome, categoria, descrizione, viaggio_id, condiviso, utente_id)
+        SELECT DISTINCT nome, categoria, descrizione, viaggio_id, 0, %s
+        FROM attrezzatura
+        WHERE viaggio_id = %s AND condiviso = 0
+        """,
+        (utente_id, id_viaggio)
+    )
+
+
 @app.route("/viaggio/<int:id_viaggio>/lista_partecipanti", methods=["GET","POST"])
 def lista_partecipanti(id_viaggio):
     if "id_utente" not in session:
@@ -841,7 +884,7 @@ def lista_partecipanti(id_viaggio):
         cursor = connessione.cursor(dictionary=True)
         # Verifica che l'utente possa accedere al viaggio e recupera il token
         cursor.execute("""
-        SELECT v.id, v.nome, v.token_invito
+        SELECT v.id, v.nome, v.token_invito, v.creatore_id
         FROM viaggi v
         WHERE v.id = %s AND (
                 v.creatore_id = %s OR EXISTS (
@@ -904,36 +947,43 @@ def lista_partecipanti(id_viaggio):
                         )
 
                         # Dopo aver aggiunto il partecipante, copiamogli gli oggetti personali!
-                        cursor.execute("SELECT DISTINCT nome, categoria, descrizione FROM attrezzatura WHERE viaggio_id = %s AND condiviso = 0", (id_viaggio,))
-                        oggetti_personali_esistenti = cursor.fetchall()
-                        for o in oggetti_personali_esistenti:
-                            cursor.execute("""
-                                INSERT INTO attrezzatura (nome, categoria, descrizione, viaggio_id, condiviso, utente_id)
-                                VALUES (%s, %s, %s, %s, 0, %s)
-                            """, (o['nome'], o['categoria'], o['descrizione'], id_viaggio, utente_id))
+                        crea_attrezzatura_personale(cursor, id_viaggio, utente_id)
                         
                         connessione.commit()
                         flash("Partecipante aggiunto al viaggio.", "success")
             #Elimina un partecipante dalla 
-            elif azione== "elimina":
-                utente_da_eliminare=request.form.get("utente_id", "")
+            elif azione == "elimina":
+                utente_da_eliminare = request.form.get("utente_id", "")
 
-                if utente_da_eliminare.isdigit():
-                    # Controllo autorizzazione: sei il creatore, oppure stai auto-eliminando te stesso?
-                        if id_utente == viaggio["creatore_id"] or id_utente == int(utente_da_eliminare):
-                            cursor.execute(
-                                """
-                                DELETE FROM partecipanti
-                                WHERE utente_id = %s AND viaggio_id=%s
-                                """,
-                                (int(utente_da_eliminare), id_viaggio)
-                            )
-                            connessione.commit()
-                            flash("Partecipante rimosso dal viaggio.", "success")
-                        else:
-                            flash("Non hai i permessi per rimuovere questo partecipante.", "error")
-                else:
+                if not utente_da_eliminare.isdigit():
                     flash("Utente non valido.", "error")
+                elif int(utente_da_eliminare) == viaggio["creatore_id"]:
+                    flash("Il creatore non può essere rimosso dal viaggio.", "error")
+                elif id_utente != viaggio["creatore_id"] and id_utente != int(utente_da_eliminare):
+                    flash("Non hai i permessi per rimuovere questo partecipante.", "error")
+                else:
+                    utente_id_rimosso = int(utente_da_eliminare)
+                    cursor.execute(
+                        """
+                        DELETE FROM partecipanti
+                        WHERE utente_id = %s AND viaggio_id = %s
+                        """,
+                        (utente_id_rimosso, id_viaggio)
+                    )
+                    # pulizia: i suoi oggetti personali spariscono, quelli di gruppo che portava tornano liberi
+                    cursor.execute(
+                        "DELETE FROM attrezzatura WHERE viaggio_id = %s AND condiviso = 0 AND utente_id = %s",
+                        (id_viaggio, utente_id_rimosso)
+                    )
+                    cursor.execute(
+                        """
+                        UPDATE attrezzatura SET utente_id = NULL, preparato = 0
+                        WHERE viaggio_id = %s AND condiviso = 1 AND utente_id = %s
+                        """,
+                        (id_viaggio, utente_id_rimosso)
+                    )
+                    connessione.commit()
+                    flash("Partecipante rimosso dal viaggio.", "success")
             return redirect(url_for("lista_partecipanti", id_viaggio=id_viaggio))
         
         #recupera i partecipanti di questo viaggio
@@ -1008,14 +1058,22 @@ def gestione_spese(id_viaggio):
                 pagato_da = request.form.get("pagato_da")
 
                 if descrizione and importo and data and pagato_da:
-                    cursor.execute(
-                        """
-                        INSERT INTO spese (viaggio_id, utente_id, descrizione, importo, categoria, data)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                        """,
-                        (id_viaggio, pagato_da, descrizione, importo, categoria, data))
-                    connessione.commit()
-                    flash("Spesa registrata con successo!", "success")
+                    try:
+                        importo_dec = Decimal(importo)
+                        if not importo_dec.is_finite() or importo_dec <= 0 or importo_dec >= Decimal("100000000"):
+                            raise InvalidOperation
+                        importo_dec = importo_dec.quantize(CENTESIMO, rounding=ROUND_HALF_UP)
+                    except InvalidOperation:
+                        flash("Inserisci un importo valido.", "error")
+                    else:
+                        cursor.execute(
+                            """
+                            INSERT INTO spese (viaggio_id, utente_id, descrizione, importo, categoria, data)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            """,
+                            (id_viaggio, pagato_da, descrizione, importo_dec, categoria, data))
+                        connessione.commit()
+                        flash("Spesa registrata con successo!", "success")
                 else:
                     flash("Compila tutti i campi obbligatori.", "error")
             elif azione =="elimina":
@@ -1064,18 +1122,26 @@ def gestione_spese(id_viaggio):
             (id_viaggio,)
         )
         spese=cursor.fetchall()
-        totale_spese = sum(float(s["importo"]) for s in spese)
-        quota_capite = totale_spese / totale_partecipanti if totale_partecipanti > 0 else 0
-        
+        totale_spese = sum((Decimal(str(s["importo"])) for s in spese), Decimal("0.00"))
+        quota_capite = totale_spese / totale_partecipanti if totale_partecipanti > 0 else Decimal("0.00")
+
         # Inizializzo il dizionario dei bilanci per ogni partecipante
-        bilanci = {p["username"]: {"pagato": 0.0, "bilancio": -quota_capite} for p in partecipanti}
+        bilanci = {p["username"]: {"pagato": Decimal("0.00"), "bilancio": -quota_capite} for p in partecipanti}
 
         for spesa in spese:
             pagatore = spesa["pagatore"]
-            importo = float(spesa["importo"])
-            if pagatore in bilanci:
-                bilanci[pagatore]["pagato"] += importo
-                bilanci[pagatore]["bilancio"] += importo
+            importo = Decimal(str(spesa["importo"]))
+            # chi ha pagato ma non è più nel viaggio resta nei conti, così il totale torna a zero
+            if pagatore not in bilanci:
+                bilanci[pagatore] = {"pagato": Decimal("0.00"), "bilancio": Decimal("0.00")}
+            bilanci[pagatore]["pagato"] += importo
+            bilanci[pagatore]["bilancio"] += importo
+
+        # arrotonda al centesimo solo alla fine, per la visualizzazione
+        quota_capite = quota_capite.quantize(CENTESIMO, rounding=ROUND_HALF_UP)
+        for dati in bilanci.values():
+            dati["pagato"] = dati["pagato"].quantize(CENTESIMO, rounding=ROUND_HALF_UP)
+            dati["bilancio"] = dati["bilancio"].quantize(CENTESIMO, rounding=ROUND_HALF_UP)
 
         return render_template(
             "spese.html", 
@@ -1096,6 +1162,7 @@ def gestione_spese(id_viaggio):
         connessione.close()
                     
 @app.route("/viaggio/<int:id_viaggio>/chat", methods=["GET", "POST"])
+@limiter.limit("60 per minute", key_func=chiave_utente)  # la chat si aggiorna ogni 3 secondi: serve un limite suo
 def chat_viaggio(id_viaggio):
     if "id_utente" not in session:
         return redirect(url_for("login"))
@@ -1311,14 +1378,19 @@ def itinerario_viaggio(id_viaggio):
                     # Se i campi non sono riempiti impostiamo NULL (None in Python) o zero per il costo
                     ora = ora if ora else None
                     luogo = luogo if luogo else None
-                    costo = float(costo) if costo else 0.00
-                    
-                    cursor.execute("""
-                        INSERT INTO attivita (viaggio_id, nome, descrizione, data, ora, luogo, COSTO)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, (id_viaggio, nome, descrizione, data, ora, luogo, costo))
-                    connessione.commit()
-                    flash("Attività aggiunta all'itinerario.", "success")
+                    try:
+                        costo = Decimal(costo) if costo else Decimal("0.00")
+                        if not costo.is_finite() or costo < 0 or costo >= Decimal("100000000"):
+                            raise InvalidOperation
+                    except InvalidOperation:
+                        flash("Inserisci un costo valido.", "error")
+                    else:
+                        cursor.execute("""
+                            INSERT INTO attivita (viaggio_id, nome, descrizione, data, ora, luogo, COSTO)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """, (id_viaggio, nome, descrizione, data, ora, luogo, costo))
+                        connessione.commit()
+                        flash("Attività aggiunta all'itinerario.", "success")
                     
             elif azione == "elimina":
                 attivita_id = request.form.get("attivita_id")
@@ -1512,13 +1584,8 @@ def unisciti_viaggio(token):
         # 4. Aggiungi l'utente ai partecipanti
         cursor.execute("INSERT INTO partecipanti (viaggio_id, utente_id) VALUES (%s, %s)", (id_viaggio, id_utente))
 
-        # 5. Genera la sua attrezzatura PERSONALE basata sulla tipologia del viaggio
-        cursor.execute("""
-            INSERT INTO attrezzatura (nome, categoria, viaggio_id, condiviso, utente_id)
-            SELECT nome, categoria, %s, 0, %s
-            FROM modelli_attrezzatura 
-            WHERE tipo_viaggio_id = %s AND condiviso = 0
-        """, (id_viaggio, id_utente, viaggio["tipo_viaggio_id"]))
+        # 5. Genera la sua attrezzatura PERSONALE (modello + oggetti aggiunti dal gruppo)
+        crea_attrezzatura_personale(cursor, id_viaggio, id_utente)
 
         connessione.commit()
         flash(f"Fantastico! Ti sei unito al viaggio '{viaggio['nome']}'.", "success")
@@ -1534,22 +1601,39 @@ def unisciti_viaggio(token):
         connessione.close()
 
 
-# Questa funzione viene salvata in memoria per 30 minuti (1800 secondi)
-@cache.memoize(timeout=1800)
+# Cache manuale: risultati validi 30 minuti, "località non trovata" 10 minuti,
+# gli errori temporanei non vengono memorizzati.
 def fetch_meteo_api(destinazione):
     api_key = os.getenv("OPENWEATHER_API_KEY")
     if not api_key:
         return {"error": "API Key non configurata", "cod": 500}
-        
-    url_now = f"https://api.openweathermap.org/data/2.5/weather?q={destinazione}&units=metric&lang=it&appid={api_key}"
-    url_forecast = f"https://api.openweathermap.org/data/2.5/forecast?q={destinazione}&units=metric&lang=it&appid={api_key}"
-    
+
+    destinazione = destinazione.strip()[:100]
+    chiave_cache = f"meteo:{destinazione.lower()}"
+    in_cache = cache.get(chiave_cache)
+    if in_cache is not None:
+        return in_cache
+
+    # con params, requests codifica la destinazione e non si possono iniettare altri parametri
+    params = {"q": destinazione, "units": "metric", "lang": "it", "appid": api_key}
     try:
-        res_now = requests.get(url_now, timeout=5).json()
-        res_forecast = requests.get(url_forecast, timeout=5).json()
-        return {"cod": 200, "corrente": res_now, "previsioni": res_forecast}
-    except requests.RequestException:
+        res_now = requests.get("https://api.openweathermap.org/data/2.5/weather", params=params, timeout=5)
+        if res_now.status_code == 404:
+            risultato = {
+                "error": f"Meteo non disponibile per «{destinazione}». Prova con il nome di una città vicina.",
+                "cod": 404,
+            }
+            cache.set(chiave_cache, risultato, timeout=600)
+            return risultato
+        res_forecast = requests.get("https://api.openweathermap.org/data/2.5/forecast", params=params, timeout=5)
+        if res_now.status_code != 200 or res_forecast.status_code != 200:
+            return {"error": "Impossibile recuperare i dati meteo", "cod": 500}
+        risultato = {"cod": 200, "corrente": res_now.json(), "previsioni": res_forecast.json()}
+    except (requests.RequestException, ValueError):
         return {"error": "Impossibile recuperare i dati meteo", "cod": 500}
+
+    cache.set(chiave_cache, risultato, timeout=1800)
+    return risultato
 
 @app.route("/api/meteo/<destinazione>")
 @limiter.limit("15 per minute")
@@ -1560,13 +1644,14 @@ def get_meteo(destinazione):
 
     # La chiamata API avviene solo se la cache è scaduta
     dati = fetch_meteo_api(destinazione)
-    
-    if dati.get("cod") == 500:
-        return jsonify(dati), 500
-        
+
+    if dati.get("cod") != 200:
+        return jsonify(dati), dati.get("cod", 500)
+
     return jsonify(dati), 200
 
 @app.route('/healthz')
+@limiter.exempt
 def health_check():
     connessione = tentativo_accesso()
     if connessione:

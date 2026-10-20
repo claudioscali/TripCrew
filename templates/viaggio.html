@@ -93,11 +93,14 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(data => {
             if (data.cod === 200 || data.cod === "200") {
                 const curr = data.corrente;
+                // Data e ora nel fuso orario della destinazione (non UTC, non quello del browser)
+                const tz = (data.previsioni.city || {}).timezone || 0;
+                const dataLocale = ts => new Date((ts + tz) * 1000);
                 
                 // Raggruppiamo le previsioni per giorno (ci serve anche per la min/max di oggi)
                 const giorni = {};
                 data.previsioni.list.forEach(item => {
-                    const dataSoloGiorno = item.dt_txt.split(' ')[0];
+                    const dataSoloGiorno = dataLocale(item.dt).toISOString().split('T')[0];
                     if(!giorni[dataSoloGiorno]) {
                         giorni[dataSoloGiorno] = [];
                     }
@@ -108,7 +111,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 let tMin = curr.main.temp_min;
                 let tMax = curr.main.temp_max;
                 // Gestione fuso orario locale per evitare discrepanze con la data dell'API
-                const dataDiOggi = new Date(curr.dt * 1000).toISOString().split('T')[0]; 
+                const dataDiOggi = dataLocale(curr.dt).toISOString().split('T')[0]; 
                 
                 if (giorni[dataDiOggi]) {
                     const temperatureOggi = giorni[dataDiOggi].map(r => r.main.temp);
@@ -141,7 +144,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 let htmlModale = '';
                 for (const [dataStr, rilevazioni] of Object.entries(giorni)) {
                     // Prendi la rilevazione di mezzogiorno (o la prima disponibile)
-                    let meteoGiorno = rilevazioni.find(r => r.dt_txt.includes("12:00:00")) || rilevazioni[0];
+                    let meteoGiorno = rilevazioni.reduce((best, r) => Math.abs(dataLocale(r.dt).getUTCHours() - 12) < Math.abs(dataLocale(best.dt).getUTCHours() - 12) ? r : best, rilevazioni[0]);
                     
                     // Calcola la min e max di tutta la giornata
                     const tempsGiorno = rilevazioni.map(r => r.main.temp);
@@ -149,7 +152,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     const maxGiorno = Math.round(Math.max(...tempsGiorno));
 
                     let dataObj = new Date(dataStr);
-                    let dataFormattata = dataObj.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+                    let dataFormattata = dataObj.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
                     htmlModale += `
                         <div class="d-flex justify-content-between align-items-center p-2 mb-2 rounded" style="background-color: var(--surface-2); border: 1px solid var(--line);">
@@ -174,6 +177,12 @@ document.addEventListener("DOMContentLoaded", function() {
 
             } else {
                 console.warn("Meteo non disponibile.");
+                meteoDati.textContent = data.error || "Meteo non disponibile per questa destinazione.";
+                container.removeAttribute("data-bs-toggle");
+                container.style.cursor = "default";
+                const suggerimento = container.querySelector("small");
+                if (suggerimento) { suggerimento.classList.add("d-none"); }
+                container.classList.remove("d-none");
             }
         })
         .catch(err => console.error("Errore recupero meteo:", err));

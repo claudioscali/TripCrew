@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 
 {% block content %}
@@ -57,7 +56,7 @@
                         </span>
                     </div>
                     
-                    {% if session['id_utente'] == viaggio['creatore_id'] or session['id_utente'] == partecipante.utente_id %}
+                    {% if partecipante.utente_id != viaggio['creatore_id'] and (session['id_utente'] == viaggio['creatore_id'] or session['id_utente'] == partecipante.utente_id) %}
                     <form method="POST" onsubmit="return confirm('Vuoi eliminare questo partecipante?');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
