@@ -68,7 +68,18 @@
       <button type="submit" id="btn-register">Registrati</button>
   </form>
     <p class="mt-4 mb-2">oppure</p>
-    <a href="{{ url_for('login_google') }}" class="btn btn-outline-secondary">Continua con Google</a>
+    <a href="{{ url_for('login_google') }}" 
+        class="google-login-button"
+        aria-label="Registrati con Google">
+        
+        <img class="google-button-light"
+            src="{{ url_for('static', filename='images/google-button-light.svg') }}"
+            alt="Registrati con Google">
+
+        <img class="google-button-dark"
+            src="{{ url_for('static', filename='images/google-button-dark.svg') }}"
+            alt="">
+    </a>
 </div>
 
 {% endblock %}
